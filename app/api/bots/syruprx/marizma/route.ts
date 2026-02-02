@@ -255,6 +255,24 @@ export async function POST(request: Request) {
     }
 
     const data = await response.json().catch(() => ({}))
+
+    // If ban was successful, also kick the player to remove them from current server
+    if (action === "ban" && resolvedUserId) {
+      try {
+        await fetch(`${baseURL}v1/server/moderation/kick`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ 
+            UserId: resolvedUserId, 
+            ModerationReason: "Banned from server" 
+          }),
+        })
+        // We don't check the kick response - player may not be online, which is fine
+      } catch {
+        // Kick failed silently - ban was still successful
+      }
+    }
+
     return NextResponse.json({ success: true, data, message: `${action} executed successfully` })
   } catch (error) {
     console.error("Marizma API error:", error)
