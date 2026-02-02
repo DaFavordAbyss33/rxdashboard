@@ -103,44 +103,42 @@ export function SyrupRxGeneralTab({ guildId }: SyrupRxGeneralTabProps) {
   const [minLevel, setMinLevel] = useState("")
   const [banSearch, setBanSearch] = useState("")
 
-  // Roblox headshots cache
-  const [headshots, setHeadshots] = useState<Record<number, string>>({})
+  // Roblox user data cache (includes username + headshot)
+  const [robloxUsers, setRobloxUsers] = useState<Record<number, {
+    id: number
+    name: string
+    displayName: string
+    headshot: string | null
+  }>>({})
 
-  // Load Roblox headshots for banned users
-  const loadHeadshots = async (userIds: number[]) => {
+  // Load Roblox user data (usernames + headshots)
+  const loadRobloxUsers = async (userIds: number[]) => {
     if (userIds.length === 0) return
     
-    const missingIds = userIds.filter(id => !headshots[id])
+    const missingIds = userIds.filter(id => !robloxUsers[id])
     if (missingIds.length === 0) return
 
     try {
-      const response = await fetch(
-        `https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${missingIds.join(",")}&size=48x48&format=Png&isCircular=false`
-      )
+      const response = await fetch(`/api/roblox/users?ids=${missingIds.join(",")}`)
       const data = await response.json()
       
-      const newHeadshots: Record<number, string> = {}
-      for (const item of data.data || []) {
-        if (item.imageUrl) {
-          newHeadshots[item.targetId] = item.imageUrl
-        }
+      if (data.success && data.data) {
+        setRobloxUsers(prev => ({ ...prev, ...data.data }))
       }
-      
-      setHeadshots(prev => ({ ...prev, ...newHeadshots }))
     } catch (error) {
-      console.error("Failed to load headshots:", error)
+      console.error("Failed to load Roblox users:", error)
     }
   }
 
-  // Load headshots when data changes
+  // Load user data when lists change
   if (bansData?.success && bansData.data?.data?.Bans) {
-    loadHeadshots(bansData.data.data.Bans)
+    loadRobloxUsers(bansData.data.data.Bans)
   }
   if (playersData?.success && playersData.data?.data?.Players) {
-    loadHeadshots(playersData.data.data.Players)
+    loadRobloxUsers(playersData.data.data.Players)
   }
   if (queueData?.success && queueData.data?.data?.Queue) {
-    loadHeadshots(queueData.data.data.Queue)
+    loadRobloxUsers(queueData.data.data.Queue)
   }
 
   const executeAction = async (action: string, params: Record<string, unknown>) => {
@@ -186,10 +184,16 @@ export function SyrupRxGeneralTab({ guildId }: SyrupRxGeneralTabProps) {
   const queueIds: number[] = queueData?.data?.data?.Queue || []
   const banIds: number[] = bansData?.data?.data?.Bans || []
 
-  const filteredBans = banIds.filter(userId => 
-    banSearch === "" || 
-    userId.toString().includes(banSearch)
-  )
+  const filteredBans = banIds.filter(userId => {
+    if (banSearch === "") return true
+    const searchLower = banSearch.toLowerCase()
+    const user = robloxUsers[userId]
+    return (
+      userId.toString().includes(banSearch) ||
+      user?.name?.toLowerCase().includes(searchLower) ||
+      user?.displayName?.toLowerCase().includes(searchLower)
+    )
+  })
 
   const isConfigured = serverInfoData?.success !== false || !serverInfoData?.error?.includes("not configured")
 
@@ -312,27 +316,37 @@ export function SyrupRxGeneralTab({ guildId }: SyrupRxGeneralTabProps) {
               </div>
             ) : playerIds.length > 0 ? (
               <div className="space-y-1">
-                {playerIds.map((userId) => (
-                  <div
-                    key={userId}
-                    className="flex items-center justify-between rounded px-2 py-1.5 text-sm hover:bg-secondary/50"
-                  >
-                    <div className="flex items-center gap-2">
-                      {headshots[userId] ? (
-                        <Image 
-                          src={headshots[userId]} 
-                          alt="" 
-                          width={24} 
-                          height={24} 
-                          className="rounded"
-                        />
-                      ) : (
-                        <div className="h-6 w-6 rounded bg-secondary" />
-                      )}
-                      <span className="font-mono text-xs">{userId}</span>
+                {playerIds.map((userId) => {
+                  const user = robloxUsers[userId]
+                  return (
+                    <div
+                      key={userId}
+                      className="flex items-center justify-between rounded px-2 py-1.5 text-sm hover:bg-secondary/50"
+                    >
+                      <div className="flex items-center gap-2">
+                        {user?.headshot ? (
+                          <Image 
+                            src={user.headshot} 
+                            alt="" 
+                            width={24} 
+                            height={24} 
+                            className="rounded"
+                          />
+                        ) : (
+                          <div className="h-6 w-6 rounded bg-secondary" />
+                        )}
+                        <div className="flex flex-col">
+                          <span className="text-sm">
+                            {user?.displayName || `User ${userId}`}
+                          </span>
+                          {user && user.displayName !== user.name && (
+                            <span className="text-xs text-muted-foreground">@{user.name}</span>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             ) : (
               <p className="py-4 text-center text-sm text-muted-foreground">
@@ -362,28 +376,38 @@ export function SyrupRxGeneralTab({ guildId }: SyrupRxGeneralTabProps) {
               </div>
             ) : queueIds.length > 0 ? (
               <div className="space-y-1">
-                {queueIds.map((userId, index) => (
-                  <div
-                    key={userId}
-                    className="flex items-center justify-between rounded px-2 py-1.5 text-sm hover:bg-secondary/50"
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="text-muted-foreground">#{index + 1}</span>
-                      {headshots[userId] ? (
-                        <Image 
-                          src={headshots[userId]} 
-                          alt="" 
-                          width={24} 
-                          height={24} 
-                          className="rounded"
-                        />
-                      ) : (
-                        <div className="h-6 w-6 rounded bg-secondary" />
-                      )}
-                      <span className="font-mono text-xs">{userId}</span>
+                {queueIds.map((userId, index) => {
+                  const user = robloxUsers[userId]
+                  return (
+                    <div
+                      key={userId}
+                      className="flex items-center justify-between rounded px-2 py-1.5 text-sm hover:bg-secondary/50"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="w-6 text-center text-muted-foreground">#{index + 1}</span>
+                        {user?.headshot ? (
+                          <Image 
+                            src={user.headshot} 
+                            alt="" 
+                            width={24} 
+                            height={24} 
+                            className="rounded"
+                          />
+                        ) : (
+                          <div className="h-6 w-6 rounded bg-secondary" />
+                        )}
+                        <div className="flex flex-col">
+                          <span className="text-sm">
+                            {user?.displayName || `User ${userId}`}
+                          </span>
+                          {user && user.displayName !== user.name && (
+                            <span className="text-xs text-muted-foreground">@{user.name}</span>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             ) : (
               <p className="py-4 text-center text-sm text-muted-foreground">
@@ -604,7 +628,7 @@ export function SyrupRxGeneralTab({ guildId }: SyrupRxGeneralTabProps) {
         <div className="relative mb-4">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="Search by User ID..."
+            placeholder="Search by User ID or username..."
             value={banSearch}
             onChange={(e) => setBanSearch(e.target.value)}
             className="pl-9"
@@ -618,44 +642,51 @@ export function SyrupRxGeneralTab({ guildId }: SyrupRxGeneralTabProps) {
             </div>
           ) : filteredBans.length > 0 ? (
             <div className="space-y-2">
-              {filteredBans.map((userId) => (
-                <div
-                  key={userId}
-                  className="flex items-center justify-between rounded-lg border border-border bg-background p-3"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 overflow-hidden rounded-full bg-secondary">
-                      {headshots[userId] ? (
-                        <Image
-                          src={headshots[userId]}
-                          alt={`User ${userId}`}
-                          width={40}
-                          height={40}
-                          className="h-full w-full object-cover"
-                        />
-                      ) : (
-                        <div className="flex h-full w-full items-center justify-center text-muted-foreground">
-                          <Users className="h-5 w-5" />
-                        </div>
-                      )}
-                    </div>
-                    <div>
-                      <p className="font-mono text-sm">
-                        {userId}
-                      </p>
-                    </div>
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => executeAction("ban", { userId: userId.toString(), banned: false })}
-                    disabled={isExecuting === "ban"}
+              {filteredBans.map((userId) => {
+                const user = robloxUsers[userId]
+                return (
+                  <div
+                    key={userId}
+                    className="flex items-center justify-between rounded-lg border border-border bg-background p-3"
                   >
-                    {isExecuting === "ban" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    Revoke Ban
-                  </Button>
-                </div>
-              ))}
+                    <div className="flex items-center gap-3">
+                      <div className="h-10 w-10 overflow-hidden rounded-full bg-secondary">
+                        {user?.headshot ? (
+                          <Image
+                            src={user.headshot}
+                            alt={user.displayName || `User ${userId}`}
+                            width={40}
+                            height={40}
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center text-muted-foreground">
+                            <Users className="h-5 w-5" />
+                          </div>
+                        )}
+                      </div>
+                      <div>
+                        <p className="font-medium">
+                          {user?.displayName || `User ${userId}`}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {user && user.displayName !== user.name ? `@${user.name} · ` : ""}
+                          ID: {userId}
+                        </p>
+                      </div>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => executeAction("ban", { userId: userId.toString(), banned: false })}
+                      disabled={isExecuting === "ban"}
+                    >
+                      {isExecuting === "ban" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                      Revoke Ban
+                    </Button>
+                  </div>
+                )
+              })}
             </div>
           ) : banIds.length === 0 ? (
             <p className="py-8 text-center text-sm text-muted-foreground">
