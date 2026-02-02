@@ -46,6 +46,8 @@ import {
   MoreHorizontal,
   Plus,
   X,
+  Users,
+  UserPlus,
 } from "lucide-react"
 import {
   DropdownMenu,
@@ -115,6 +117,22 @@ export default function AdminPage() {
   const [previewHtml, setPreviewHtml] = useState<string>("")
   const [isGeneratingPreview, setIsGeneratingPreview] = useState(false)
   const [showPreview, setShowPreview] = useState(false)
+
+  // Contacts state
+  const [isSyncingContacts, setIsSyncingContacts] = useState(false)
+  const [contactsResult, setContactsResult] = useState<{ type: "success" | "error"; text: string; stats?: { created: number; updated: number; failed: number; total: number } } | null>(null)
+
+  // Fetch contacts from Resend
+  const { data: contactsData, isLoading: contactsLoading, mutate: mutateContacts } = useSWR(
+    "/api/admin/contacts",
+    fetcher
+  )
+
+  // Fetch subscribed users from database
+  const { data: subscribedUsersData, isLoading: subscribedUsersLoading, mutate: mutateSubscribedUsers } = useSWR(
+    "/api/admin/contacts?action=subscribed",
+    fetcher
+  )
 
   // Fetch templates from Resend
   const { data: templatesData, isLoading: templatesLoading, mutate: mutateTemplates } = useSWR(
@@ -186,6 +204,38 @@ export default function AdminPage() {
   const updateSetting = <K extends keyof BotSettings>(key: K, value: BotSettings[K]) => {
     setLocalSettings(prev => ({ ...prev, [key]: value }))
     setSaveMessage(null) // Clear message when user makes changes
+  }
+
+  // Sync contacts to Resend
+  const handleSyncContacts = async () => {
+    setIsSyncingContacts(true)
+    setContactsResult(null)
+
+    try {
+      const response = await fetch("/api/admin/contacts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "sync" }),
+      })
+
+      const data = await response.json()
+
+      if (response.ok && data.success) {
+        setContactsResult({ 
+          type: "success", 
+          text: data.message,
+          stats: data.stats 
+        })
+        mutateContacts()
+        mutateSubscribedUsers()
+      } else {
+        setContactsResult({ type: "error", text: data.error || "Failed to sync contacts" })
+      }
+    } catch (error) {
+      setContactsResult({ type: "error", text: "Network error. Please try again." })
+    } finally {
+      setIsSyncingContacts(false)
+    }
   }
 
   // Generate HTML preview
@@ -1117,6 +1167,156 @@ export default function AdminPage() {
                   Default Notice
                 </Button>
               </div>
+            </CardContent>
+          </Card>
+
+          {/* Contacts Management */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Users className="h-5 w-5 text-primary" />
+                  <CardTitle>Newsletter Contacts</CardTitle>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => { mutateContacts(); mutateSubscribedUsers(); }}
+                  >
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                    Refresh
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={handleSyncContacts}
+                    disabled={isSyncingContacts}
+                  >
+                    {isSyncingContacts ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <UserPlus className="mr-2 h-4 w-4" />
+                    )}
+                    Sync to Resend
+                  </Button>
+                </div>
+              </div>
+              <CardDescription>
+                Manage newsletter subscribers. Sync users with "Creator Notices" enabled to Resend.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Contacts Result */}
+              {contactsResult && (
+                <div className={`flex items-start gap-2 rounded-lg p-4 ${
+                  contactsResult.type === "success" 
+                    ? "bg-green-500/10 border border-green-500/50" 
+                    : "bg-destructive/10 border border-destructive/50"
+                }`}>
+                  {contactsResult.type === "success" ? (
+                    <CheckCircle className="h-5 w-5 text-green-500 shrink-0 mt-0.5" />
+                  ) : (
+                    <AlertTriangle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
+                  )}
+                  <div className="flex-1">
+                    <span className={`text-sm ${
+                      contactsResult.type === "success" ? "text-green-500" : "text-destructive"
+                    }`}>
+                      {contactsResult.text}
+                    </span>
+                    {contactsResult.stats && (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/30">
+                          {contactsResult.stats.created} created
+                        </Badge>
+                        <Badge variant="outline" className="bg-blue-500/10 text-blue-500 border-blue-500/30">
+                          {contactsResult.stats.updated} updated
+                        </Badge>
+                        {contactsResult.stats.failed > 0 && (
+                          <Badge variant="outline" className="bg-destructive/10 text-destructive border-destructive/30">
+                            {contactsResult.stats.failed} failed
+                          </Badge>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    className="h-6 px-2 shrink-0"
+                    onClick={() => setContactsResult(null)}
+                  >
+                    Dismiss
+                  </Button>
+                </div>
+              )}
+
+              {/* Stats Grid */}
+              <div className="grid gap-4 md:grid-cols-2">
+                {/* Subscribed Users (Database) */}
+                <div className="rounded-lg border p-4">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium text-muted-foreground">Users with Notices Enabled</p>
+                    <Users className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                  {subscribedUsersLoading ? (
+                    <Skeleton className="mt-2 h-8 w-16" />
+                  ) : (
+                    <p className="mt-2 text-2xl font-bold">
+                      {subscribedUsersData?.count || 0}
+                    </p>
+                  )}
+                  <p className="text-xs text-muted-foreground mt-1">From your database</p>
+                </div>
+
+                {/* Resend Contacts */}
+                <div className="rounded-lg border p-4">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium text-muted-foreground">Resend Contacts</p>
+                    <Mail className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                  {contactsLoading ? (
+                    <Skeleton className="mt-2 h-8 w-16" />
+                  ) : (
+                    <p className="mt-2 text-2xl font-bold">
+                      {contactsData?.contacts?.data?.length || 0}
+                    </p>
+                  )}
+                  <p className="text-xs text-muted-foreground mt-1">Synced to Resend audience</p>
+                </div>
+              </div>
+
+              {/* Subscribed Users List */}
+              {subscribedUsersData?.users?.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">Subscribed Users</p>
+                  <div className="max-h-48 overflow-y-auto rounded-lg border">
+                    {subscribedUsersData.users.slice(0, 20).map((user: { discordId: string; username: string; email?: string }) => (
+                      <div 
+                        key={user.discordId} 
+                        className="flex items-center justify-between border-b last:border-0 px-3 py-2"
+                      >
+                        <div className="flex items-center gap-2">
+                          <div className="h-6 w-6 rounded-full bg-primary/10 flex items-center justify-center">
+                            <span className="text-xs font-medium text-primary">
+                              {user.username?.charAt(0)?.toUpperCase() || "?"}
+                            </span>
+                          </div>
+                          <span className="text-sm">{user.username}</span>
+                        </div>
+                        <span className="text-xs text-muted-foreground truncate max-w-[200px]">
+                          {user.email || "No email"}
+                        </span>
+                      </div>
+                    ))}
+                    {subscribedUsersData.users.length > 20 && (
+                      <div className="px-3 py-2 text-xs text-muted-foreground text-center">
+                        +{subscribedUsersData.users.length - 20} more users
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
