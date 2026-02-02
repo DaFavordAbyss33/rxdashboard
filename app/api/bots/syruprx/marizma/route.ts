@@ -84,24 +84,24 @@ export async function GET(request: Request) {
       )
     }
 
-    const headers = {
-      "Authorization": config.apiKey,
+    const headers: Record<string, string> = {
+      "X-Api-Key": config.apiKey,
       "Content-Type": "application/json",
     }
 
     let endpoint = ""
     switch (action) {
       case "serverinfo":
-        endpoint = "server/info"
+        endpoint = "v1/server"
         break
       case "players":
-        endpoint = "server/players"
+        endpoint = "v1/server/players"
         break
       case "queue":
-        endpoint = "server/queue"
+        endpoint = "v1/server/queue"
         break
       case "bans":
-        endpoint = "server/bans"
+        endpoint = "v1/server/bans"
         break
       default:
         return NextResponse.json(
@@ -110,7 +110,8 @@ export async function GET(request: Request) {
         )
     }
 
-    const response = await fetch(`${config.baseURL}${endpoint}`, {
+    const baseURL = config.baseURL.endsWith("/") ? config.baseURL : `${config.baseURL}/`
+    const response = await fetch(`${baseURL}${endpoint}`, {
       method: "GET",
       headers,
     })
@@ -163,43 +164,46 @@ export async function POST(request: Request) {
       )
     }
 
-    const headers = {
-      "Authorization": config.apiKey,
+    const headers: Record<string, string> = {
+      "X-Api-Key": config.apiKey,
       "Content-Type": "application/json",
     }
 
     let endpoint = ""
-    let method = "POST"
     let requestBody: Record<string, unknown> = {}
 
     switch (action) {
       case "announce":
-        endpoint = "server/announce"
+        endpoint = "v1/server/announce"
         requestBody = { message: params.message }
         break
       case "kick":
-        endpoint = "server/kick"
-        requestBody = { userId: params.userId, reason: params.reason }
+        endpoint = "v1/server/moderation/kick"
+        requestBody = { 
+          UserId: parseInt(params.userId as string), 
+          ModerationReason: params.reason || undefined 
+        }
         break
       case "ban":
-        endpoint = "server/ban"
-        requestBody = { userId: params.userId, banned: params.banned }
+        endpoint = "v1/server/banplayer"
+        requestBody = { 
+          UserId: parseInt(params.userId as string), 
+          Banned: params.banned 
+        }
         break
       case "settings":
-        endpoint = "server/settings"
-        method = "PATCH"
+        endpoint = "v1/server/setSetting"
         requestBody = {}
-        if (params.hideFromList !== undefined) requestBody.hideFromList = params.hideFromList
-        if (params.private !== undefined) requestBody.private = params.private
+        if (params.hideFromList !== undefined) requestBody.HideFromList = params.hideFromList
+        if (params.private !== undefined) requestBody.Private = params.private
         if (params.minLevel !== undefined) requestBody.minLevel = params.minLevel
         break
       case "banner":
-        endpoint = "server/banner"
-        method = "PATCH"
-        requestBody = { text: params.text }
+        endpoint = "v1/server/setbanner"
+        requestBody = { banner: params.text }
         break
       case "shutdown":
-        endpoint = "server/shutdown"
+        endpoint = "v1/server/shutdown"
         break
       default:
         return NextResponse.json(
@@ -208,8 +212,9 @@ export async function POST(request: Request) {
         )
     }
 
-    const response = await fetch(`${config.baseURL}${endpoint}`, {
-      method,
+    const baseURL = config.baseURL.endsWith("/") ? config.baseURL : `${config.baseURL}/`
+    const response = await fetch(`${baseURL}${endpoint}`, {
+      method: "POST",
       headers,
       body: JSON.stringify(requestBody),
     })
