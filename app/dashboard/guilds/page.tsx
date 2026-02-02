@@ -100,7 +100,7 @@ export default function GuildsPage() {
                       )}
                     </div>
                     <p className="mt-1 text-sm text-muted-foreground">
-                      {guild.memberCount.toLocaleString()} members
+                      {guild.memberCount ? `${guild.memberCount.toLocaleString()} members` : "Discord Server"}
                     </p>
                   </div>
                 </div>
