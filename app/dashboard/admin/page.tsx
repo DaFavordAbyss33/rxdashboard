@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useCallback } from "react"
 import useSWR, { mutate } from "swr"
 import { useAuth } from "@/lib/auth-context"
 import { Button } from "@/components/ui/button"
@@ -31,12 +31,24 @@ import {
   Search,
   AlertTriangle,
   CheckCircle,
+  Save,
+  Loader2,
 } from "lucide-react"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useRouter } from "next/navigation"
-import { useEffect } from "react"
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json())
+
+interface BotSettings {
+  maintenanceMode: boolean
+  debugLogging: boolean
+  autoRestart: boolean
+  customStatus: string
+  commandPrefix: string
+  enabledFeatures: string[]
+  updatedAt?: string
+  updatedBy?: string
+}
 
 const BOT_NAMES: Record<string, string> = {
   syruprx: "SyrupRx",
@@ -46,12 +58,24 @@ const BOT_NAMES: Record<string, string> = {
   swissrx: "SwissRx",
 }
 
+const DEFAULT_SETTINGS: BotSettings = {
+  maintenanceMode: false,
+  debugLogging: false,
+  autoRestart: true,
+  customStatus: "",
+  commandPrefix: "!",
+  enabledFeatures: [],
+}
+
 export default function AdminPage() {
-  const { isAdmin, isAdminLoading, isAuthenticated, isLoading } = useAuth()
+  const { isAdmin, isAdminLoading, isAuthenticated, isLoading, user } = useAuth()
   const router = useRouter()
   const [searchTerm, setSearchTerm] = useState("")
   const [leavingGuild, setLeavingGuild] = useState<string | null>(null)
   const [selectedBot, setSelectedBot] = useState<string>("syruprx")
+  const [localSettings, setLocalSettings] = useState<BotSettings>(DEFAULT_SETTINGS)
+  const [isSaving, setIsSaving] = useState(false)
+  const [saveMessage, setSaveMessage] = useState<{ type: "success" | "error"; text: string } | null>(null)
 
   const { data: guildsData, error: guildsError, isLoading: guildsLoading } = useSWR(
     "/api/admin/guilds",
@@ -61,8 +85,56 @@ export default function AdminPage() {
 
   const { data: settingsData, error: settingsError, isLoading: settingsLoading } = useSWR(
     `/api/admin/settings?botId=${selectedBot}`,
-    fetcher
+    fetcher,
+    { refreshInterval: 30000 }
   )
+
+  // Sync local settings when data loads or bot changes
+  useEffect(() => {
+    if (settingsData?.settings?.data) {
+      setLocalSettings(settingsData.settings.data)
+    } else {
+      setLocalSettings(DEFAULT_SETTINGS)
+    }
+    setSaveMessage(null)
+  }, [settingsData, selectedBot])
+
+  // Save settings to MongoDB
+  const handleSaveSettings = useCallback(async () => {
+    setIsSaving(true)
+    setSaveMessage(null)
+    
+    try {
+      const response = await fetch("/api/admin/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          botId: selectedBot,
+          settings: localSettings,
+          updatedBy: user?.username || "admin",
+        }),
+      })
+
+      const data = await response.json()
+      
+      if (response.ok && data.success) {
+        setSaveMessage({ type: "success", text: "Settings saved! Bot will sync automatically." })
+        mutate(`/api/admin/settings?botId=${selectedBot}`)
+      } else {
+        setSaveMessage({ type: "error", text: data.error || "Failed to save settings" })
+      }
+    } catch (error) {
+      setSaveMessage({ type: "error", text: "Network error. Please try again." })
+    } finally {
+      setIsSaving(false)
+    }
+  }, [selectedBot, localSettings, user])
+
+  // Update a single setting
+  const updateSetting = <K extends keyof BotSettings>(key: K, value: BotSettings[K]) => {
+    setLocalSettings(prev => ({ ...prev, [key]: value }))
+    setSaveMessage(null) // Clear message when user makes changes
+  }
 
   // Redirect non-admins
   useEffect(() => {
@@ -311,7 +383,10 @@ export default function AdminPage() {
                     key={id}
                     variant={selectedBot === id ? "default" : "outline"}
                     size="sm"
-                    onClick={() => setSelectedBot(id)}
+                    onClick={() => {
+                      setSelectedBot(id)
+                      setSaveMessage(null)
+                    }}
                     className="gap-2"
                   >
                     <Bot className="h-4 w-4" />
@@ -325,12 +400,19 @@ export default function AdminPage() {
           {/* Bot Settings */}
           <Card>
             <CardHeader>
-              <div className="flex items-center gap-2">
-                <Bot className="h-5 w-5 text-primary" />
-                <CardTitle>{BOT_NAMES[selectedBot]} Settings</CardTitle>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Bot className="h-5 w-5 text-primary" />
+                  <CardTitle>{BOT_NAMES[selectedBot]} Settings</CardTitle>
+                </div>
+                {settingsData?.settings?.data?.updatedAt && (
+                  <Badge variant="outline" className="text-xs">
+                    Last updated: {new Date(settingsData.settings.data.updatedAt).toLocaleString()}
+                  </Badge>
+                )}
               </div>
               <CardDescription>
-                Configure global settings for this bot
+                Configure global settings for this bot. Changes sync automatically to the bot.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
@@ -346,60 +428,113 @@ export default function AdminPage() {
                   <div>
                     <p className="font-medium text-amber-500">Database Not Configured</p>
                     <p className="text-sm text-muted-foreground">
-                      MongoDB is not configured for this bot. Add the environment variable to enable settings.
+                      MongoDB is not configured for this bot. Add the MONGODB_URI_{selectedBot.toUpperCase().replace("-", "_")} environment variable.
                     </p>
                   </div>
                 </div>
               ) : (
                 <>
                   <div className="space-y-4">
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between rounded-lg border p-4">
                       <div className="space-y-0.5">
                         <Label>Maintenance Mode</Label>
                         <p className="text-sm text-muted-foreground">
-                          Disable bot commands temporarily
+                          Disable bot commands temporarily for all servers
                         </p>
                       </div>
-                      <Switch />
+                      <Switch 
+                        checked={localSettings.maintenanceMode}
+                        onCheckedChange={(checked) => updateSetting("maintenanceMode", checked)}
+                      />
                     </div>
 
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between rounded-lg border p-4">
                       <div className="space-y-0.5">
                         <Label>Debug Logging</Label>
                         <p className="text-sm text-muted-foreground">
                           Enable verbose logging for troubleshooting
                         </p>
                       </div>
-                      <Switch />
+                      <Switch 
+                        checked={localSettings.debugLogging}
+                        onCheckedChange={(checked) => updateSetting("debugLogging", checked)}
+                      />
                     </div>
 
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between rounded-lg border p-4">
                       <div className="space-y-0.5">
                         <Label>Auto Restart</Label>
                         <p className="text-sm text-muted-foreground">
                           Automatically restart on crash
                         </p>
                       </div>
-                      <Switch defaultChecked />
+                      <Switch 
+                        checked={localSettings.autoRestart}
+                        onCheckedChange={(checked) => updateSetting("autoRestart", checked)}
+                      />
                     </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="statusMessage">Custom Status Message</Label>
-                    <Input
-                      id="statusMessage"
-                      placeholder="Enter a custom status message..."
-                    />
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="commandPrefix">Command Prefix</Label>
+                      <Input
+                        id="commandPrefix"
+                        placeholder="!"
+                        value={localSettings.commandPrefix}
+                        onChange={(e) => updateSetting("commandPrefix", e.target.value)}
+                        maxLength={5}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="customStatus">Custom Status Message</Label>
+                      <Input
+                        id="customStatus"
+                        placeholder="Playing with commands..."
+                        value={localSettings.customStatus}
+                        onChange={(e) => updateSetting("customStatus", e.target.value)}
+                        maxLength={128}
+                      />
+                    </div>
                   </div>
 
-                  <div className="flex items-center gap-2 rounded-lg bg-muted/50 p-4">
-                    <CheckCircle className="h-5 w-5 text-green-500" />
-                    <span className="text-sm text-muted-foreground">
-                      Settings are synced with the bot database
-                    </span>
-                  </div>
+                  {/* Save Status */}
+                  {saveMessage && (
+                    <div className={`flex items-center gap-2 rounded-lg p-4 ${
+                      saveMessage.type === "success" 
+                        ? "bg-green-500/10 border border-green-500/50" 
+                        : "bg-destructive/10 border border-destructive/50"
+                    }`}>
+                      {saveMessage.type === "success" ? (
+                        <CheckCircle className="h-5 w-5 text-green-500" />
+                      ) : (
+                        <AlertTriangle className="h-5 w-5 text-destructive" />
+                      )}
+                      <span className={`text-sm ${
+                        saveMessage.type === "success" ? "text-green-500" : "text-destructive"
+                      }`}>
+                        {saveMessage.text}
+                      </span>
+                    </div>
+                  )}
 
-                  <Button className="w-full">Save Settings</Button>
+                  <Button 
+                    className="w-full gap-2" 
+                    onClick={handleSaveSettings}
+                    disabled={isSaving}
+                  >
+                    {isSaving ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Saving...
+                      </>
+                    ) : (
+                      <>
+                        <Save className="h-4 w-4" />
+                        Save Settings
+                      </>
+                    )}
+                  </Button>
                 </>
               )}
             </CardContent>
