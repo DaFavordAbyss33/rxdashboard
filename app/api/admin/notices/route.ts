@@ -90,7 +90,7 @@ export async function GET() {
   try {
     // Verify admin access via session cookie
     const cookieStore = await cookies()
-    const sessionCookie = cookieStore.get("session")
+    const sessionCookie = cookieStore.get("discord_session")
 
     if (!sessionCookie?.value) {
       return NextResponse.json(
@@ -118,7 +118,7 @@ export async function POST(request: Request) {
   try {
     // Verify admin access via session cookie
     const cookieStore = await cookies()
-    const sessionCookie = cookieStore.get("session")
+    const sessionCookie = cookieStore.get("discord_session")
 
     if (!sessionCookie?.value) {
       return NextResponse.json(
