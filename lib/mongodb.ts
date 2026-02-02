@@ -1,7 +1,7 @@
 import { MongoClient, Db } from "mongodb"
 
+// v4: Completely rewritten MongoDB client with graceful error handling
 // Bot database configuration - check if env vars exist before using
-// v2: Graceful error handling for missing MongoDB URIs
 export const BOT_DATABASES = {
   syruprx: {
     uri: process.env.MONGODB_URI_SYRUPRX || "",
@@ -36,11 +36,13 @@ export function isBotConfigured(botId: BotId): boolean {
 // Cache connections to avoid creating new connections on every request
 const clientCache: Map<string, MongoClient> = new Map()
 
+// GRACEFUL ERROR HANDLING - Returns null instead of throwing
 export async function getMongoClient(botId: BotId): Promise<MongoClient | null> {
   const config = BOT_DATABASES[botId]
   
+  // Graceful return if not configured - DO NOT THROW
   if (!config?.uri || config.uri.length === 0) {
-    console.warn(`MongoDB URI not configured for bot: ${botId}`)
+    console.warn(`[mongodb] URI not configured for bot: ${botId}`)
     return null
   }
 
@@ -49,12 +51,16 @@ export async function getMongoClient(botId: BotId): Promise<MongoClient | null> 
     return clientCache.get(botId)!
   }
 
-  // Create new client
-  const client = new MongoClient(config.uri)
-  await client.connect()
-  
-  clientCache.set(botId, client)
-  return client
+  try {
+    // Create new client
+    const client = new MongoClient(config.uri)
+    await client.connect()
+    clientCache.set(botId, client)
+    return client
+  } catch (error) {
+    console.error(`[mongodb] Failed to connect for ${botId}:`, error)
+    return null
+  }
 }
 
 export async function getBotDatabase(botId: BotId): Promise<Db | null> {
@@ -65,15 +71,16 @@ export async function getBotDatabase(botId: BotId): Promise<Db | null> {
 
 // Get guild stats from a bot's database
 export async function getGuildStats(botId: BotId) {
-  try {
-    if (!isBotConfigured(botId)) {
-      return {
-        totalGuilds: 0,
-        connected: false,
-        error: "MongoDB not configured",
-      }
+  // Check configuration first - return gracefully if not configured
+  if (!isBotConfigured(botId)) {
+    return {
+      totalGuilds: 0,
+      connected: false,
+      error: "MongoDB not configured",
     }
-    
+  }
+
+  try {
     const db = await getBotDatabase(botId)
     if (!db) {
       return {
@@ -92,7 +99,7 @@ export async function getGuildStats(botId: BotId) {
       connected: true,
     }
   } catch (error) {
-    console.error(`Failed to get guild stats for ${botId}:`, error)
+    console.error(`[mongodb] Failed to get guild stats for ${botId}:`, error)
     return {
       totalGuilds: 0,
       connected: false,
@@ -103,15 +110,16 @@ export async function getGuildStats(botId: BotId) {
 
 // Get subscription/premium data from a bot's database
 export async function getSubscriptionStats(botId: BotId) {
-  try {
-    if (!isBotConfigured(botId)) {
-      return {
-        activeSubscriptions: 0,
-        totalSubscriptions: 0,
-        connected: false,
-      }
+  // Check configuration first - return gracefully if not configured
+  if (!isBotConfigured(botId)) {
+    return {
+      activeSubscriptions: 0,
+      totalSubscriptions: 0,
+      connected: false,
     }
-    
+  }
+
+  try {
     const db = await getBotDatabase(botId)
     if (!db) {
       return {
@@ -134,7 +142,7 @@ export async function getSubscriptionStats(botId: BotId) {
       connected: true,
     }
   } catch (error) {
-    console.error(`Failed to get subscription stats for ${botId}:`, error)
+    console.error(`[mongodb] Failed to get subscription stats for ${botId}:`, error)
     return {
       activeSubscriptions: 0,
       totalSubscriptions: 0,
@@ -145,11 +153,12 @@ export async function getSubscriptionStats(botId: BotId) {
 
 // Get recent logs/incidents from a bot's database
 export async function getRecentIncidents(botId: BotId, limit: number = 10) {
+  // Check configuration first - return gracefully if not configured
+  if (!isBotConfigured(botId)) {
+    return []
+  }
+
   try {
-    if (!isBotConfigured(botId)) {
-      return []
-    }
-    
     const db = await getBotDatabase(botId)
     if (!db) {
       return []
@@ -172,7 +181,7 @@ export async function getRecentIncidents(botId: BotId, limit: number = 10) {
       createdAt: doc.timestamp || doc.createdAt || new Date().toISOString(),
     }))
   } catch (error) {
-    console.error(`Failed to get incidents for ${botId}:`, error)
+    console.error(`[mongodb] Failed to get incidents for ${botId}:`, error)
     return []
   }
 }
