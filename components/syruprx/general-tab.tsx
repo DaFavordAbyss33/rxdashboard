@@ -50,27 +50,21 @@ interface SyrupRxGeneralTabProps {
 }
 
 interface ServerInfo {
-  name?: string
-  description?: string
-  owner?: string
-  admins?: string[]
-  playerCount?: number
-  maxPlayers?: number
-  hideFromList?: boolean
-  private?: boolean
-  minLevel?: number
-  banner?: string
+  ServerName?: string
+  ServerDescription?: string
+  Owner?: number
+  Admins?: number[]
+  HeadAdmins?: number[]
+  PlayerCount?: number
+  MaxPlayers?: number
+  Icon?: string
+  Code?: string
 }
 
 interface Player {
   userId: number
-  username: string
-  displayName?: string
-}
-
-interface BannedUser {
-  userId: number
   username?: string
+  displayName?: string
 }
 
 export function SyrupRxGeneralTab({ guildId }: SyrupRxGeneralTabProps) {
@@ -138,10 +132,15 @@ export function SyrupRxGeneralTab({ guildId }: SyrupRxGeneralTabProps) {
     }
   }
 
-  // Load headshots when bans data changes
-  if (bansData?.success && bansData.data?.bans) {
-    const banUserIds = bansData.data.bans.map((b: BannedUser) => b.userId)
-    loadHeadshots(banUserIds)
+  // Load headshots when data changes
+  if (bansData?.success && bansData.data?.data?.Bans) {
+    loadHeadshots(bansData.data.data.Bans)
+  }
+  if (playersData?.success && playersData.data?.data?.Players) {
+    loadHeadshots(playersData.data.data.Players)
+  }
+  if (queueData?.success && queueData.data?.data?.Queue) {
+    loadHeadshots(queueData.data.data.Queue)
   }
 
   const executeAction = async (action: string, params: Record<string, unknown>) => {
@@ -181,15 +180,15 @@ export function SyrupRxGeneralTab({ guildId }: SyrupRxGeneralTabProps) {
     }
   }
 
-  const serverInfo: ServerInfo = serverInfoData?.data || {}
-  const players: Player[] = playersData?.data?.players || []
-  const queue: Player[] = queueData?.data?.queue || []
-  const bans: BannedUser[] = bansData?.data?.bans || []
+  const serverInfo: ServerInfo = serverInfoData?.data?.data || {}
+  // API returns arrays of user IDs, we convert to Player objects
+  const playerIds: number[] = playersData?.data?.data?.Players || []
+  const queueIds: number[] = queueData?.data?.data?.Queue || []
+  const banIds: number[] = bansData?.data?.data?.Bans || []
 
-  const filteredBans = bans.filter(ban => 
+  const filteredBans = banIds.filter(userId => 
     banSearch === "" || 
-    ban.userId.toString().includes(banSearch) ||
-    ban.username?.toLowerCase().includes(banSearch.toLowerCase())
+    userId.toString().includes(banSearch)
   )
 
   const isConfigured = serverInfoData?.success !== false || !serverInfoData?.error?.includes("not configured")
@@ -253,37 +252,32 @@ export function SyrupRxGeneralTab({ guildId }: SyrupRxGeneralTabProps) {
               <div className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
                 <div>
                   <span className="text-muted-foreground">Name:</span>{" "}
-                  <span className="font-medium">{serverInfo.name || "N/A"}</span>
+                  <span className="font-medium">{serverInfo.ServerName || "N/A"}</span>
                 </div>
                 <div>
-                  <span className="text-muted-foreground">Owner:</span>{" "}
-                  <span className="font-medium">{serverInfo.owner || "N/A"}</span>
+                  <span className="text-muted-foreground">Owner ID:</span>{" "}
+                  <span className="font-mono">{serverInfo.Owner || "N/A"}</span>
                 </div>
                 <div>
                   <span className="text-muted-foreground">Players:</span>{" "}
                   <span className="font-medium">
-                    {serverInfo.playerCount ?? 0}/{serverInfo.maxPlayers ?? "?"}
+                    {serverInfo.PlayerCount ?? 0}/{serverInfo.MaxPlayers ?? "?"}
                   </span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-muted-foreground">Status:</span>
-                  <Badge variant={serverInfo.private ? "secondary" : "default"}>
-                    {serverInfo.private ? "Private" : "Public"}
-                  </Badge>
-                  {serverInfo.hideFromList && (
-                    <Badge variant="outline">Hidden</Badge>
-                  )}
+                <div>
+                  <span className="text-muted-foreground">Server Code:</span>{" "}
+                  <span className="font-mono">{serverInfo.Code || "N/A"}</span>
                 </div>
-                {serverInfo.description && (
+                {serverInfo.ServerDescription && (
                   <div className="col-span-2">
                     <span className="text-muted-foreground">Description:</span>{" "}
-                    <span>{serverInfo.description}</span>
+                    <span>{serverInfo.ServerDescription}</span>
                   </div>
                 )}
-                {serverInfo.banner && (
+                {serverInfo.Admins && serverInfo.Admins.length > 0 && (
                   <div className="col-span-2">
-                    <span className="text-muted-foreground">Banner:</span>{" "}
-                    <span className="italic">{serverInfo.banner}</span>
+                    <span className="text-muted-foreground">Admins:</span>{" "}
+                    <span className="font-mono text-xs">{serverInfo.Admins.join(", ")}</span>
                   </div>
                 )}
               </div>
@@ -304,7 +298,7 @@ export function SyrupRxGeneralTab({ guildId }: SyrupRxGeneralTabProps) {
             <div className="flex items-center gap-2">
               <Users className="h-5 w-5 text-primary" />
               <h4 className="font-medium text-card-foreground">
-                Current Players ({players.length})
+                Current Players ({playerIds.length})
               </h4>
             </div>
             <Button variant="ghost" size="icon" onClick={() => refreshPlayers()}>
@@ -316,17 +310,27 @@ export function SyrupRxGeneralTab({ guildId }: SyrupRxGeneralTabProps) {
               <div className="space-y-2">
                 {[1, 2, 3].map(i => <Skeleton key={i} className="h-8 w-full" />)}
               </div>
-            ) : players.length > 0 ? (
+            ) : playerIds.length > 0 ? (
               <div className="space-y-1">
-                {players.map((player) => (
+                {playerIds.map((userId) => (
                   <div
-                    key={player.userId}
+                    key={userId}
                     className="flex items-center justify-between rounded px-2 py-1.5 text-sm hover:bg-secondary/50"
                   >
-                    <span>{player.displayName || player.username}</span>
-                    <span className="font-mono text-xs text-muted-foreground">
-                      {player.userId}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      {headshots[userId] ? (
+                        <Image 
+                          src={headshots[userId]} 
+                          alt="" 
+                          width={24} 
+                          height={24} 
+                          className="rounded"
+                        />
+                      ) : (
+                        <div className="h-6 w-6 rounded bg-secondary" />
+                      )}
+                      <span className="font-mono text-xs">{userId}</span>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -344,7 +348,7 @@ export function SyrupRxGeneralTab({ guildId }: SyrupRxGeneralTabProps) {
             <div className="flex items-center gap-2">
               <Clock className="h-5 w-5 text-primary" />
               <h4 className="font-medium text-card-foreground">
-                Queue ({queue.length})
+                Queue ({queueIds.length})
               </h4>
             </div>
             <Button variant="ghost" size="icon" onClick={() => refreshQueue()}>
@@ -356,20 +360,28 @@ export function SyrupRxGeneralTab({ guildId }: SyrupRxGeneralTabProps) {
               <div className="space-y-2">
                 {[1, 2].map(i => <Skeleton key={i} className="h-8 w-full" />)}
               </div>
-            ) : queue.length > 0 ? (
+            ) : queueIds.length > 0 ? (
               <div className="space-y-1">
-                {queue.map((player, index) => (
+                {queueIds.map((userId, index) => (
                   <div
-                    key={player.userId}
+                    key={userId}
                     className="flex items-center justify-between rounded px-2 py-1.5 text-sm hover:bg-secondary/50"
                   >
-                    <span>
-                      <span className="text-muted-foreground">#{index + 1}</span>{" "}
-                      {player.displayName || player.username}
-                    </span>
-                    <span className="font-mono text-xs text-muted-foreground">
-                      {player.userId}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-muted-foreground">#{index + 1}</span>
+                      {headshots[userId] ? (
+                        <Image 
+                          src={headshots[userId]} 
+                          alt="" 
+                          width={24} 
+                          height={24} 
+                          className="rounded"
+                        />
+                      ) : (
+                        <div className="h-6 w-6 rounded bg-secondary" />
+                      )}
+                      <span className="font-mono text-xs">{userId}</span>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -581,7 +593,7 @@ export function SyrupRxGeneralTab({ guildId }: SyrupRxGeneralTabProps) {
           <div className="flex items-center gap-2">
             <Ban className="h-5 w-5 text-primary" />
             <h4 className="font-medium text-card-foreground">
-              Server Bans ({bans.length})
+              Server Bans ({banIds.length})
             </h4>
           </div>
           <Button variant="ghost" size="icon" onClick={() => refreshBans()}>
@@ -592,7 +604,7 @@ export function SyrupRxGeneralTab({ guildId }: SyrupRxGeneralTabProps) {
         <div className="relative mb-4">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="Search by User ID or username..."
+            placeholder="Search by User ID..."
             value={banSearch}
             onChange={(e) => setBanSearch(e.target.value)}
             className="pl-9"
@@ -606,17 +618,17 @@ export function SyrupRxGeneralTab({ guildId }: SyrupRxGeneralTabProps) {
             </div>
           ) : filteredBans.length > 0 ? (
             <div className="space-y-2">
-              {filteredBans.map((ban) => (
+              {filteredBans.map((userId) => (
                 <div
-                  key={ban.userId}
+                  key={userId}
                   className="flex items-center justify-between rounded-lg border border-border bg-background p-3"
                 >
                   <div className="flex items-center gap-3">
                     <div className="h-10 w-10 overflow-hidden rounded-full bg-secondary">
-                      {headshots[ban.userId] ? (
+                      {headshots[userId] ? (
                         <Image
-                          src={headshots[ban.userId]}
-                          alt={ban.username || `User ${ban.userId}`}
+                          src={headshots[userId]}
+                          alt={`User ${userId}`}
                           width={40}
                           height={40}
                           className="h-full w-full object-cover"
@@ -628,18 +640,15 @@ export function SyrupRxGeneralTab({ guildId }: SyrupRxGeneralTabProps) {
                       )}
                     </div>
                     <div>
-                      <p className="font-medium">
-                        {ban.username || `User ${ban.userId}`}
-                      </p>
-                      <p className="font-mono text-xs text-muted-foreground">
-                        ID: {ban.userId}
+                      <p className="font-mono text-sm">
+                        {userId}
                       </p>
                     </div>
                   </div>
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => executeAction("ban", { userId: ban.userId, banned: false })}
+                    onClick={() => executeAction("ban", { userId: userId.toString(), banned: false })}
                     disabled={isExecuting === "ban"}
                   >
                     {isExecuting === "ban" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
@@ -648,13 +657,13 @@ export function SyrupRxGeneralTab({ guildId }: SyrupRxGeneralTabProps) {
                 </div>
               ))}
             </div>
-          ) : bans.length === 0 ? (
+          ) : banIds.length === 0 ? (
             <p className="py-8 text-center text-sm text-muted-foreground">
               No banned players
             </p>
           ) : (
             <p className="py-8 text-center text-sm text-muted-foreground">
-              No results found for "{banSearch}"
+              No results found for &quot;{banSearch}&quot;
             </p>
           )}
         </div>
