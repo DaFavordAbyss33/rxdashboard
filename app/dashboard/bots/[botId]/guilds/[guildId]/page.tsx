@@ -13,6 +13,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { Skeleton } from "@/components/ui/skeleton"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
 import {
   ArrowLeft,
@@ -28,6 +36,19 @@ import {
   Save,
   RefreshCw,
   AlertTriangle,
+  Wrench,
+  Globe,
+  Shield,
+  MessageSquare,
+  Terminal,
+  Users,
+  Ban,
+  Power,
+  Megaphone,
+  Flag,
+  UserX,
+  Clock,
+  Info,
 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -136,25 +157,34 @@ export default function GuildConfigPage({ params }: GuildConfigPageProps) {
     }))
   }
 
-  // Setup completeness check
-  const setupChecklist = [
-    {
-      label: "Bot installed",
-      done: true,
-    },
-    {
-      label: "Log channel configured",
-      done: !!config.staffLogs || !!config.modLogs,
-    },
-    {
-      label: "API keys set",
-      done: bot.capabilities.keys?.some((key) => !!config[key]) ?? true,
-    },
-    {
-      label: "Features enabled",
-      done: bot.capabilities.features?.some((f) => !!config[f]) ?? true,
-    },
-  ]
+// Setup completeness check
+    const isSyrupRx = botId === "syruprx"
+    const setupChecklist = [
+      {
+        label: "Bot installed",
+        done: true,
+      },
+      ...(isSyrupRx
+        ? [
+            {
+              label: "Marizma API configured",
+              done: !!config["marizma.apiKey"],
+            },
+          ]
+        : []),
+      {
+        label: "Log channel configured",
+        done: !!config.staffLogs || !!config.modLogs || !!config.logChannelId,
+      },
+      {
+        label: "API keys set",
+        done: bot.capabilities.keys?.some((key) => !!config[key]) ?? true,
+      },
+      {
+        label: "Features enabled",
+        done: bot.capabilities.features?.some((f) => !!config[f]) ?? true,
+      },
+    ]
 
   const completedSteps = setupChecklist.filter((s) => s.done).length
   const totalSteps = setupChecklist.length
@@ -259,6 +289,24 @@ export default function GuildConfigPage({ params }: GuildConfigPageProps) {
                 <Settings className="mr-2 h-4 w-4" />
                 General
               </TabsTrigger>
+              {botId === "syruprx" && (
+                <TabsTrigger
+                  value="setup"
+                  className="rounded-none border-b-2 border-transparent px-4 py-3 data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none"
+                >
+                  <Wrench className="mr-2 h-4 w-4" />
+                  Setup
+                </TabsTrigger>
+              )}
+              {botId === "syruprx" && (
+                <TabsTrigger
+                  value="commands"
+                  className="rounded-none border-b-2 border-transparent px-4 py-3 data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none"
+                >
+                  <Terminal className="mr-2 h-4 w-4" />
+                  Commands
+                </TabsTrigger>
+              )}
               {bot.capabilities.channels && bot.capabilities.channels.length > 0 && (
                 <TabsTrigger
                   value="channels"
@@ -344,6 +392,485 @@ export default function GuildConfigPage({ params }: GuildConfigPageProps) {
             </div>
           </TabsContent>
 
+          {/* Setup Tab (SyrupRx specific - Marizma Configuration) */}
+          {botId === "syruprx" && (
+            <TabsContent value="setup" className="p-6">
+              <div className="space-y-6">
+                <div>
+                  <h3 className="text-lg font-semibold text-card-foreground">
+                    Marizma Configuration
+                  </h3>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Configure the Marizma API connection for SyrupRx in this server
+                  </p>
+                </div>
+                <Separator />
+
+                {/* Base URL */}
+                <div className="rounded-lg border border-border bg-secondary/30 p-4">
+                  <div className="flex items-start gap-3">
+                    <Globe className="mt-0.5 h-5 w-5 text-muted-foreground" />
+                    <div className="flex-1 space-y-3">
+                      <div>
+                        <Label className="text-sm font-medium">Base URL</Label>
+                        <p className="text-sm text-muted-foreground">
+                          Select the Marizma API endpoint or enter a custom URL
+                        </p>
+                      </div>
+                      <Select
+                        value={
+                          (config["marizma.baseURL"] as string) === "https://maple-api.marizma.games/"
+                            ? "default"
+                            : (config["marizma.baseURL"] as string)
+                              ? "custom"
+                              : "default"
+                        }
+                        onValueChange={(value) => {
+                          if (value === "default") {
+                            handleInputChange("marizma.baseURL", "https://maple-api.marizma.games/")
+                          } else if (value === "custom") {
+                            // Keep current value or set empty for custom input
+                            if (!config["marizma.baseURL"] || config["marizma.baseURL"] === "https://maple-api.marizma.games/") {
+                              handleInputChange("marizma.baseURL", "")
+                            }
+                          }
+                        }}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select base URL" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="default">
+                            marizma.games (default)
+                          </SelectItem>
+                          <SelectItem value="custom">
+                            Custom (Not Recommended)
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                      {(config["marizma.baseURL"] as string) !== "https://maple-api.marizma.games/" && 
+                       config["marizma.baseURL"] !== undefined && (
+                        <Input
+                          placeholder="https://your-custom-api.example.com/"
+                          value={(config["marizma.baseURL"] as string) ?? ""}
+                          onChange={(e) => handleInputChange("marizma.baseURL", e.target.value)}
+                        />
+                      )}
+                      <p className="text-xs text-muted-foreground">
+                        Current: {(config["marizma.baseURL"] as string) || "https://maple-api.marizma.games/"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* API Key */}
+                <div className="rounded-lg border border-border bg-secondary/30 p-4">
+                  <div className="flex items-start gap-3">
+                    <Key className="mt-0.5 h-5 w-5 text-muted-foreground" />
+                    <div className="flex-1 space-y-3">
+                      <div>
+                        <Label className="text-sm font-medium">Marizma API Key</Label>
+                        <p className="text-sm text-muted-foreground">
+                          Your Marizma API key for authentication
+                        </p>
+                      </div>
+                      <div className="flex gap-2">
+                        <Input
+                          type="password"
+                          placeholder="Enter your Marizma API key"
+                          value={(config["marizma.apiKey"] as string) ?? ""}
+                          onChange={(e) => handleInputChange("marizma.apiKey", e.target.value)}
+                          className="flex-1"
+                        />
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          onClick={() => {
+                            toast.info("Testing API connection...")
+                            // Could implement actual API test here
+                          }}
+                          title="Test API connection"
+                        >
+                          <RefreshCw className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Status: {(config["marizma.apiKey"] as string) ? "Set" : "Not set"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Admin Roles */}
+                <div className="rounded-lg border border-border bg-secondary/30 p-4">
+                  <div className="flex items-start gap-3">
+                    <Shield className="mt-0.5 h-5 w-5 text-muted-foreground" />
+                    <div className="flex-1 space-y-3">
+                      <div>
+                        <Label className="text-sm font-medium">Admin Role IDs</Label>
+                        <p className="text-sm text-muted-foreground">
+                          Discord role IDs that should have Maple admin permissions (comma-separated)
+                        </p>
+                      </div>
+                      <Textarea
+                        placeholder="Enter role IDs separated by commas (e.g., 123456789, 987654321)"
+                        value={
+                          Array.isArray(config["adminRoleIds"])
+                            ? (config["adminRoleIds"] as string[]).join(", ")
+                            : (config["adminRoleIds"] as string) ?? ""
+                        }
+                        onChange={(e) => {
+                          const value = e.target.value
+                          // Store as comma-separated string, will be parsed on save
+                          const roleIds = value
+                            .split(",")
+                            .map((id) => id.trim())
+                            .filter((id) => id.length > 0)
+                          setConfig((prev) => ({
+                            ...prev,
+                            adminRoleIds: roleIds,
+                          }))
+                        }}
+                        rows={2}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        {Array.isArray(config["adminRoleIds"])
+                          ? `${(config["adminRoleIds"] as string[]).length} role(s) configured`
+                          : "No roles configured"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Log Channel */}
+                <div className="rounded-lg border border-border bg-secondary/30 p-4">
+                  <div className="flex items-start gap-3">
+                    <MessageSquare className="mt-0.5 h-5 w-5 text-muted-foreground" />
+                    <div className="flex-1 space-y-3">
+                      <div>
+                        <Label className="text-sm font-medium">Log Channel ID</Label>
+                        <p className="text-sm text-muted-foreground">
+                          Discord channel ID for Maple action logs
+                        </p>
+                      </div>
+                      <Input
+                        placeholder="Enter channel ID (e.g., 123456789012345678)"
+                        value={(config["logChannelId"] as string) ?? ""}
+                        onChange={(e) => handleInputChange("logChannelId", e.target.value)}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Status: {(config["logChannelId"] as string) ? "Configured" : "Not set (optional)"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Configuration Summary */}
+                <div className="rounded-lg border border-primary/30 bg-primary/5 p-4">
+                  <h4 className="mb-3 font-medium text-card-foreground">
+                    Configuration Summary
+                  </h4>
+                  <div className="grid gap-2 text-sm">
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">Base URL</span>
+                      <span className="font-mono text-xs">
+                        {(config["marizma.baseURL"] as string) || "Default"}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">API Key</span>
+                      <Badge variant={config["marizma.apiKey"] ? "default" : "secondary"}>
+                        {config["marizma.apiKey"] ? "Set" : "Not Set"}
+                      </Badge>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">Admin Roles</span>
+                      <span>
+                        {Array.isArray(config["adminRoleIds"]) && config["adminRoleIds"].length > 0
+                          ? `${config["adminRoleIds"].length} role(s)`
+                          : "None"}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">Log Channel</span>
+                      <Badge variant={config["logChannelId"] ? "default" : "secondary"}>
+                        {config["logChannelId"] ? "Configured" : "Not Set"}
+                      </Badge>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </TabsContent>
+          )}
+
+          {/* Commands Tab (SyrupRx specific) */}
+          {botId === "syruprx" && (
+            <TabsContent value="commands" className="p-6">
+              <div className="space-y-6">
+                <div>
+                  <h3 className="text-lg font-semibold text-card-foreground">
+                    Bot Commands
+                  </h3>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    All available slash commands for SyrupRx in this server
+                  </p>
+                </div>
+                <Separator />
+
+                {/* Server Information Commands */}
+                <div className="space-y-4">
+                  <h4 className="flex items-center gap-2 text-sm font-medium text-card-foreground">
+                    <Info className="h-4 w-4 text-primary" />
+                    Server Information
+                  </h4>
+                  <div className="grid gap-3">
+                    <div className="rounded-lg border border-border bg-secondary/30 p-4">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <code className="rounded bg-secondary px-2 py-0.5 text-sm font-mono text-primary">
+                              /serverinfo
+                            </code>
+                            <Badge variant="secondary" className="text-xs">Public</Badge>
+                          </div>
+                          <p className="mt-2 text-sm text-muted-foreground">
+                            Get public server information from Marizma API including server name, player count, owner, admins, and description.
+                          </p>
+                        </div>
+                        <Users className="h-5 w-5 shrink-0 text-muted-foreground" />
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg border border-border bg-secondary/30 p-4">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <code className="rounded bg-secondary px-2 py-0.5 text-sm font-mono text-primary">
+                              /serverplayers
+                            </code>
+                            <Badge variant="secondary" className="text-xs">Public</Badge>
+                          </div>
+                          <p className="mt-2 text-sm text-muted-foreground">
+                            List all players currently online on the game server.
+                          </p>
+                        </div>
+                        <Users className="h-5 w-5 shrink-0 text-muted-foreground" />
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg border border-border bg-secondary/30 p-4">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <code className="rounded bg-secondary px-2 py-0.5 text-sm font-mono text-primary">
+                              /serverqueue
+                            </code>
+                            <Badge variant="secondary" className="text-xs">Public</Badge>
+                          </div>
+                          <p className="mt-2 text-sm text-muted-foreground">
+                            View the current player queue waiting to join the game server.
+                          </p>
+                        </div>
+                        <Clock className="h-5 w-5 shrink-0 text-muted-foreground" />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Moderation Commands */}
+                <div className="space-y-4">
+                  <h4 className="flex items-center gap-2 text-sm font-medium text-card-foreground">
+                    <Shield className="h-4 w-4 text-primary" />
+                    Moderation
+                  </h4>
+                  <div className="grid gap-3">
+                    <div className="rounded-lg border border-border bg-secondary/30 p-4">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <code className="rounded bg-secondary px-2 py-0.5 text-sm font-mono text-primary">
+                              /kickplayer
+                            </code>
+                            <Badge variant="outline" className="text-xs border-amber-500 text-amber-500">Admin+</Badge>
+                          </div>
+                          <p className="mt-2 text-sm text-muted-foreground">
+                            Kick a Roblox player from the server by username or user ID.
+                          </p>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <code className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                              identifier: string (required)
+                            </code>
+                            <code className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                              reason: string (optional)
+                            </code>
+                          </div>
+                        </div>
+                        <UserX className="h-5 w-5 shrink-0 text-muted-foreground" />
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg border border-border bg-secondary/30 p-4">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <code className="rounded bg-secondary px-2 py-0.5 text-sm font-mono text-primary">
+                              /banplayer
+                            </code>
+                            <Badge variant="outline" className="text-xs border-amber-500 text-amber-500">Admin+</Badge>
+                          </div>
+                          <p className="mt-2 text-sm text-muted-foreground">
+                            Ban or unban a Roblox user by username or user ID. Banning also kicks the player immediately.
+                          </p>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <code className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                              user: string (required)
+                            </code>
+                            <code className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                              banned: boolean (required)
+                            </code>
+                          </div>
+                        </div>
+                        <Ban className="h-5 w-5 shrink-0 text-muted-foreground" />
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg border border-border bg-secondary/30 p-4">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <code className="rounded bg-secondary px-2 py-0.5 text-sm font-mono text-primary">
+                              /serverbans
+                            </code>
+                            <Badge variant="outline" className="text-xs border-amber-500 text-amber-500">Admin+</Badge>
+                          </div>
+                          <p className="mt-2 text-sm text-muted-foreground">
+                            View the current ban list on the game server with pagination support.
+                          </p>
+                        </div>
+                        <Ban className="h-5 w-5 shrink-0 text-muted-foreground" />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Server Management Commands */}
+                <div className="space-y-4">
+                  <h4 className="flex items-center gap-2 text-sm font-medium text-card-foreground">
+                    <Settings className="h-4 w-4 text-primary" />
+                    Server Management
+                  </h4>
+                  <div className="grid gap-3">
+                    <div className="rounded-lg border border-border bg-secondary/30 p-4">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <code className="rounded bg-secondary px-2 py-0.5 text-sm font-mono text-primary">
+                              /announce
+                            </code>
+                            <Badge variant="outline" className="text-xs border-amber-500 text-amber-500">Admin+</Badge>
+                          </div>
+                          <p className="mt-2 text-sm text-muted-foreground">
+                            Send an announcement message to all players on the game server.
+                          </p>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <code className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                              message: string (required)
+                            </code>
+                          </div>
+                        </div>
+                        <Megaphone className="h-5 w-5 shrink-0 text-muted-foreground" />
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg border border-border bg-secondary/30 p-4">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <code className="rounded bg-secondary px-2 py-0.5 text-sm font-mono text-primary">
+                              /setbanner
+                            </code>
+                            <Badge variant="outline" className="text-xs border-amber-500 text-amber-500">Admin+</Badge>
+                          </div>
+                          <p className="mt-2 text-sm text-muted-foreground">
+                            Set a banner text that displays on the Maple server.
+                          </p>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <code className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                              text: string (required)
+                            </code>
+                          </div>
+                        </div>
+                        <Flag className="h-5 w-5 shrink-0 text-muted-foreground" />
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg border border-border bg-secondary/30 p-4">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <code className="rounded bg-secondary px-2 py-0.5 text-sm font-mono text-primary">
+                              /setsetting
+                            </code>
+                            <Badge variant="outline" className="text-xs border-amber-500 text-amber-500">Admin+</Badge>
+                          </div>
+                          <p className="mt-2 text-sm text-muted-foreground">
+                            Update Maple server settings like visibility, privacy, and minimum level requirements.
+                          </p>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <code className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                              hidefromlist: boolean (optional)
+                            </code>
+                            <code className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                              private: boolean (optional)
+                            </code>
+                            <code className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                              minlevel: integer (optional)
+                            </code>
+                          </div>
+                        </div>
+                        <Settings className="h-5 w-5 shrink-0 text-muted-foreground" />
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <code className="rounded bg-destructive/20 px-2 py-0.5 text-sm font-mono text-destructive">
+                              /shutdown
+                            </code>
+                            <Badge variant="destructive" className="text-xs">Admin+</Badge>
+                          </div>
+                          <p className="mt-2 text-sm text-muted-foreground">
+                            Immediately shut down the Maple game server. Use with caution.
+                          </p>
+                        </div>
+                        <Power className="h-5 w-5 shrink-0 text-destructive" />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Permission Info */}
+                <div className="rounded-lg border border-primary/30 bg-primary/5 p-4">
+                  <h4 className="mb-3 font-medium text-card-foreground">
+                    Permission Levels
+                  </h4>
+                  <div className="grid gap-2 text-sm">
+                    <div className="flex items-center gap-3">
+                      <Badge variant="secondary" className="text-xs w-16 justify-center">Public</Badge>
+                      <span className="text-muted-foreground">Anyone in the server can use these commands</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <Badge variant="outline" className="text-xs border-amber-500 text-amber-500 w-16 justify-center">Admin+</Badge>
+                      <span className="text-muted-foreground">Requires a configured Admin Role ID from the Setup tab</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </TabsContent>
+          )}
+          
           {/* Channels Tab */}
           <TabsContent value="channels" className="p-6">
             <div className="space-y-6">
