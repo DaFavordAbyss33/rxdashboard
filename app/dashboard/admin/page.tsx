@@ -21,6 +21,8 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
+import { Textarea } from "@/components/ui/textarea"
+import { Separator } from "@/components/ui/separator"
 import { 
   Server, 
   Settings, 
@@ -42,6 +44,8 @@ import {
   Pencil,
   ExternalLink,
   MoreHorizontal,
+  Plus,
+  X,
 } from "lucide-react"
 import {
   DropdownMenu,
@@ -97,6 +101,20 @@ export default function AdminPage() {
   const [isUploadingTemplate, setIsUploadingTemplate] = useState<string | null>(null)
   const [templateResult, setTemplateResult] = useState<{ type: "success" | "error"; text: string } | null>(null)
   const [templateAction, setTemplateAction] = useState<{ id: string; action: string } | null>(null)
+
+  // Newsletter editor state
+  const [newsletterContent, setNewsletterContent] = useState({
+    heroTitle: "NEWSLETTER",
+    heroSubtitle: "Quick updates on bots, new features, and what's shipping next.",
+    highlightsIntro: "A quick look at what happened this month and upcoming changes you should know about.",
+    highlights: ["New dashboard UI with improved navigation", "Bot status monitoring improvements", "Performance optimizations across all bots"],
+    features: [{ title: "Improved Bot Monitoring", description: "Real-time status updates and incident tracking for all your bots.", linkText: "View Dashboard", linkUrl: "https://rxsystems.app/dashboard" }],
+    ctaText: "Open Dashboard",
+    ctaUrl: "https://rxsystems.app/dashboard",
+  })
+  const [previewHtml, setPreviewHtml] = useState<string>("")
+  const [isGeneratingPreview, setIsGeneratingPreview] = useState(false)
+  const [showPreview, setShowPreview] = useState(false)
 
   // Fetch templates from Resend
   const { data: templatesData, isLoading: templatesLoading, mutate: mutateTemplates } = useSWR(
@@ -168,6 +186,54 @@ export default function AdminPage() {
   const updateSetting = <K extends keyof BotSettings>(key: K, value: BotSettings[K]) => {
     setLocalSettings(prev => ({ ...prev, [key]: value }))
     setSaveMessage(null) // Clear message when user makes changes
+  }
+
+  // Generate HTML preview
+  const handleGeneratePreview = async () => {
+    setIsGeneratingPreview(true)
+    try {
+      const response = await fetch("/api/admin/templates/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: newsletterContent }),
+      })
+      const data = await response.json()
+      if (data.success) {
+        setPreviewHtml(data.html)
+        setShowPreview(true)
+      }
+    } catch (error) {
+      console.error("Failed to generate preview:", error)
+    } finally {
+      setIsGeneratingPreview(false)
+    }
+  }
+
+  // Upload custom newsletter to Resend
+  const handleUploadCustomNewsletter = async () => {
+    setIsUploadingTemplate("custom")
+    setTemplateResult(null)
+
+    try {
+      const response = await fetch("/api/admin/templates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ templateKey: "newsletter", customContent: newsletterContent }),
+      })
+
+      const data = await response.json()
+
+      if (response.ok && data.success) {
+        setTemplateResult({ type: "success", text: `${data.message}` })
+        mutateTemplates()
+      } else {
+        setTemplateResult({ type: "error", text: data.error || "Failed to upload template" })
+      }
+    } catch (error) {
+      setTemplateResult({ type: "error", text: "Network error. Please try again." })
+    } finally {
+      setIsUploadingTemplate(null)
+    }
   }
 
   // Upload template to Resend
@@ -693,14 +759,22 @@ export default function AdminPage() {
         <TabsContent value="notices" className="mt-6 space-y-6">
           {/* Current Newsletter Issue Info */}
           <Card>
-            <CardHeader>
-              <div className="flex items-center gap-2">
-                <Mail className="h-5 w-5 text-primary" />
-                <CardTitle>Newsletter Issue Info</CardTitle>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Mail className="h-5 w-5 text-primary" />
+                  <CardTitle>Newsletter Issue Info</CardTitle>
+                </div>
+                <a 
+                  href="https://resend.com/templates" 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1 text-sm text-muted-foreground hover:text-primary transition-colors"
+                >
+                  Open Resend
+                  <ExternalLink className="h-3 w-3" />
+                </a>
               </div>
-              <CardDescription>
-                Current newsletter metadata for template variables
-              </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="grid gap-4 md:grid-cols-3">
@@ -723,109 +797,325 @@ export default function AdminPage() {
                   </p>
                 </div>
               </div>
-              <p className="mt-4 text-sm text-muted-foreground">
-                Use these values in Resend when editing your templates. Variables: <code className="rounded bg-muted px-1 py-0.5 text-xs">ISSUE_NUMBER</code>, <code className="rounded bg-muted px-1 py-0.5 text-xs">MONTH</code>, <code className="rounded bg-muted px-1 py-0.5 text-xs">YEAR</code>
-              </p>
             </CardContent>
           </Card>
 
-          {/* Quick Actions */}
+          {/* Template Result Message */}
+          {templateResult && (
+            <div className={`flex items-center gap-2 rounded-lg p-4 ${
+              templateResult.type === "success" 
+                ? "bg-green-500/10 border border-green-500/50" 
+                : "bg-destructive/10 border border-destructive/50"
+            }`}>
+              {templateResult.type === "success" ? (
+                <CheckCircle className="h-5 w-5 text-green-500" />
+              ) : (
+                <AlertTriangle className="h-5 w-5 text-destructive" />
+              )}
+              <span className={`text-sm ${
+                templateResult.type === "success" ? "text-green-500" : "text-destructive"
+              }`}>
+                {templateResult.text}
+              </span>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="ml-auto h-6 px-2"
+                onClick={() => setTemplateResult(null)}
+              >
+                Dismiss
+              </Button>
+            </div>
+          )}
+
+          {/* Newsletter Editor */}
           <Card>
             <CardHeader>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Send className="h-5 w-5 text-primary" />
-                  <CardTitle>Quick Actions</CardTitle>
-                </div>
-                <a 
-                  href="https://resend.com/templates" 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-1 text-sm text-muted-foreground hover:text-primary transition-colors"
-                >
-                  Open Resend Dashboard
-                  <ExternalLink className="h-3 w-3" />
-                </a>
+              <div className="flex items-center gap-2">
+                <Pencil className="h-5 w-5 text-primary" />
+                <CardTitle>Newsletter Editor</CardTitle>
               </div>
               <CardDescription>
-                Push templates to Resend, then edit them in the Resend dashboard
+                Customize your newsletter content, preview it, then push to Resend
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-              {/* Template Result */}
-              {templateResult && (
-                <div className={`flex items-center gap-2 rounded-lg p-4 ${
-                  templateResult.type === "success" 
-                    ? "bg-green-500/10 border border-green-500/50" 
-                    : "bg-destructive/10 border border-destructive/50"
-                }`}>
-                  {templateResult.type === "success" ? (
-                    <CheckCircle className="h-5 w-5 text-green-500" />
+            <CardContent className="space-y-6">
+              {/* Hero Section */}
+              <div className="space-y-4">
+                <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Header</h3>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="heroTitle">Hero Title</Label>
+                    <Input
+                      id="heroTitle"
+                      value={newsletterContent.heroTitle}
+                      onChange={(e) => setNewsletterContent(prev => ({ ...prev, heroTitle: e.target.value }))}
+                      placeholder="NEWSLETTER"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="ctaText">CTA Button Text</Label>
+                    <Input
+                      id="ctaText"
+                      value={newsletterContent.ctaText}
+                      onChange={(e) => setNewsletterContent(prev => ({ ...prev, ctaText: e.target.value }))}
+                      placeholder="Open Dashboard"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="heroSubtitle">Hero Subtitle</Label>
+                  <Textarea
+                    id="heroSubtitle"
+                    value={newsletterContent.heroSubtitle}
+                    onChange={(e) => setNewsletterContent(prev => ({ ...prev, heroSubtitle: e.target.value }))}
+                    placeholder="Quick updates on bots, new features, and what's shipping next."
+                    rows={2}
+                  />
+                </div>
+              </div>
+
+              <Separator />
+
+              {/* Highlights Section */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Highlights</h3>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setNewsletterContent(prev => ({
+                      ...prev,
+                      highlights: [...prev.highlights, ""]
+                    }))}
+                  >
+                    <Plus className="mr-2 h-4 w-4" />
+                    Add Highlight
+                  </Button>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="highlightsIntro">Highlights Intro</Label>
+                  <Input
+                    id="highlightsIntro"
+                    value={newsletterContent.highlightsIntro}
+                    onChange={(e) => setNewsletterContent(prev => ({ ...prev, highlightsIntro: e.target.value }))}
+                    placeholder="A quick look at what happened this month..."
+                  />
+                </div>
+                <div className="space-y-2">
+                  {newsletterContent.highlights.map((highlight, index) => (
+                    <div key={index} className="flex gap-2">
+                      <Input
+                        value={highlight}
+                        onChange={(e) => {
+                          const newHighlights = [...newsletterContent.highlights]
+                          newHighlights[index] = e.target.value
+                          setNewsletterContent(prev => ({ ...prev, highlights: newHighlights }))
+                        }}
+                        placeholder={`Highlight ${index + 1}`}
+                      />
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="shrink-0"
+                        onClick={() => {
+                          const newHighlights = newsletterContent.highlights.filter((_, i) => i !== index)
+                          setNewsletterContent(prev => ({ ...prev, highlights: newHighlights }))
+                        }}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <Separator />
+
+              {/* Features Section */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Features</h3>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setNewsletterContent(prev => ({
+                      ...prev,
+                      features: [...prev.features, { title: "", description: "", linkText: "", linkUrl: "" }]
+                    }))}
+                  >
+                    <Plus className="mr-2 h-4 w-4" />
+                    Add Feature
+                  </Button>
+                </div>
+                {newsletterContent.features.map((feature, index) => (
+                  <Card key={index} className="bg-muted/30">
+                    <CardContent className="pt-4 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-medium">Feature {index + 1}</p>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            const newFeatures = newsletterContent.features.filter((_, i) => i !== index)
+                            setNewsletterContent(prev => ({ ...prev, features: newFeatures }))
+                          }}
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      <div className="grid gap-3 md:grid-cols-2">
+                        <div className="space-y-2">
+                          <Label>Title</Label>
+                          <Input
+                            value={feature.title}
+                            onChange={(e) => {
+                              const newFeatures = [...newsletterContent.features]
+                              newFeatures[index] = { ...feature, title: e.target.value }
+                              setNewsletterContent(prev => ({ ...prev, features: newFeatures }))
+                            }}
+                            placeholder="Feature title"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Link Text</Label>
+                          <Input
+                            value={feature.linkText}
+                            onChange={(e) => {
+                              const newFeatures = [...newsletterContent.features]
+                              newFeatures[index] = { ...feature, linkText: e.target.value }
+                              setNewsletterContent(prev => ({ ...prev, features: newFeatures }))
+                            }}
+                            placeholder="View Dashboard"
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Description</Label>
+                        <Textarea
+                          value={feature.description}
+                          onChange={(e) => {
+                            const newFeatures = [...newsletterContent.features]
+                            newFeatures[index] = { ...feature, description: e.target.value }
+                            setNewsletterContent(prev => ({ ...prev, features: newFeatures }))
+                          }}
+                          placeholder="Feature description"
+                          rows={2}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Link URL</Label>
+                        <Input
+                          value={feature.linkUrl}
+                          onChange={(e) => {
+                            const newFeatures = [...newsletterContent.features]
+                            newFeatures[index] = { ...feature, linkUrl: e.target.value }
+                            setNewsletterContent(prev => ({ ...prev, features: newFeatures }))
+                          }}
+                          placeholder="https://rxsystems.app/dashboard"
+                        />
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+
+              <Separator />
+
+              {/* Action Buttons */}
+              <div className="flex flex-wrap gap-3">
+                <Button
+                  variant="outline"
+                  onClick={handleGeneratePreview}
+                  disabled={isGeneratingPreview}
+                >
+                  {isGeneratingPreview ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   ) : (
-                    <AlertTriangle className="h-5 w-5 text-destructive" />
+                    <Eye className="mr-2 h-4 w-4" />
                   )}
-                  <span className={`text-sm ${
-                    templateResult.type === "success" ? "text-green-500" : "text-destructive"
-                  }`}>
-                    {templateResult.text}
-                  </span>
-                </div>
-              )}
+                  Preview HTML
+                </Button>
+                <Button
+                  onClick={handleUploadCustomNewsletter}
+                  disabled={isUploadingTemplate !== null}
+                >
+                  {isUploadingTemplate === "custom" ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Upload className="mr-2 h-4 w-4" />
+                  )}
+                  Push to Resend
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
 
-              <div className="grid gap-4 md:grid-cols-2">
-                {/* Newsletter Template */}
-                <div className="flex items-center justify-between rounded-lg border p-4">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
-                      <Mail className="h-5 w-5 text-primary" />
-                    </div>
-                    <div>
-                      <p className="font-medium">Newsletter Template</p>
-                      <p className="text-xs text-muted-foreground">Monthly updates email</p>
-                    </div>
+          {/* HTML Preview */}
+          {showPreview && previewHtml && (
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Eye className="h-5 w-5 text-primary" />
+                    <CardTitle>Email Preview</CardTitle>
                   </div>
-                  <Button 
-                    size="sm"
-                    onClick={() => handleUploadTemplate("newsletter")}
-                    disabled={isUploadingTemplate !== null}
-                  >
-                    {isUploadingTemplate === "newsletter" ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <>
-                        <Upload className="mr-2 h-4 w-4" />
-                        Push to Resend
-                      </>
-                    )}
+                  <Button variant="ghost" size="sm" onClick={() => setShowPreview(false)}>
+                    <X className="h-4 w-4" />
                   </Button>
                 </div>
-
-                {/* Notice Template */}
-                <div className="flex items-center justify-between rounded-lg border p-4">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
-                      <FileText className="h-5 w-5 text-primary" />
-                    </div>
-                    <div>
-                      <p className="font-medium">Notice Template</p>
-                      <p className="text-xs text-muted-foreground">Announcements email</p>
-                    </div>
-                  </div>
-                  <Button 
-                    size="sm"
-                    onClick={() => handleUploadTemplate("notice")}
-                    disabled={isUploadingTemplate !== null}
-                  >
-                    {isUploadingTemplate === "notice" ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <>
-                        <Upload className="mr-2 h-4 w-4" />
-                        Push to Resend
-                      </>
-                    )}
-                  </Button>
+              </CardHeader>
+              <CardContent>
+                <div className="rounded-lg border overflow-hidden">
+                  <iframe
+                    srcDoc={previewHtml}
+                    className="w-full h-[600px] bg-white"
+                    title="Email Preview"
+                  />
                 </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Quick Push Default Templates */}
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center gap-2">
+                <Upload className="h-5 w-5 text-primary" />
+                <CardTitle className="text-base">Quick Push Default Templates</CardTitle>
+              </div>
+              <CardDescription className="text-xs">
+                Push the default templates without customization
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-wrap gap-3">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleUploadTemplate("newsletter")}
+                  disabled={isUploadingTemplate !== null}
+                >
+                  {isUploadingTemplate === "newsletter" ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Mail className="mr-2 h-4 w-4" />
+                  )}
+                  Default Newsletter
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleUploadTemplate("notice")}
+                  disabled={isUploadingTemplate !== null}
+                >
+                  {isUploadingTemplate === "notice" ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <FileText className="mr-2 h-4 w-4" />
+                  )}
+                  Default Notice
+                </Button>
               </div>
             </CardContent>
           </Card>

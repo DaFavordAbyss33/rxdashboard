@@ -115,7 +115,11 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { templateKey, publish = true } = body as { templateKey: keyof typeof TEMPLATES; publish?: boolean }
+    const { templateKey, customContent, publish = true } = body as { 
+      templateKey: keyof typeof TEMPLATES
+      customContent?: Record<string, unknown>
+      publish?: boolean 
+    }
 
     if (!templateKey || !TEMPLATES[templateKey]) {
       return NextResponse.json(
@@ -124,13 +128,21 @@ export async function POST(request: Request) {
       )
     }
 
-    const template = TEMPLATES[templateKey]
+    // If custom content provided for newsletter, build custom HTML
+    let templateHtml = TEMPLATES[templateKey].html
+    let templateName = TEMPLATES[templateKey].name
+    
+    if (templateKey === "newsletter" && customContent) {
+      templateHtml = buildNewsletter(customContent)
+      // Add timestamp to make name unique
+      templateName = `rx-newsletter-${Date.now()}`
+    }
 
     // Create the template
     const result = await resend.templates.create({
-      name: template.name,
-      html: template.html,
-      variables: template.variables,
+      name: templateName,
+      html: templateHtml,
+      variables: TEMPLATES[templateKey].variables,
     })
 
     // Optionally publish it
