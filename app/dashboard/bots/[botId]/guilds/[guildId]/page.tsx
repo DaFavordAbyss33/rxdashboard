@@ -40,6 +40,15 @@ import {
   Globe,
   Shield,
   MessageSquare,
+  Terminal,
+  Users,
+  Ban,
+  Power,
+  Megaphone,
+  Flag,
+  UserX,
+  Clock,
+  Info,
 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -287,6 +296,15 @@ export default function GuildConfigPage({ params }: GuildConfigPageProps) {
                 >
                   <Wrench className="mr-2 h-4 w-4" />
                   Setup
+                </TabsTrigger>
+              )}
+              {botId === "syruprx" && (
+                <TabsTrigger
+                  value="commands"
+                  className="rounded-none border-b-2 border-transparent px-4 py-3 data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none"
+                >
+                  <Terminal className="mr-2 h-4 w-4" />
+                  Commands
                 </TabsTrigger>
               )}
               {bot.capabilities.channels && bot.capabilities.channels.length > 0 && (
@@ -585,6 +603,274 @@ export default function GuildConfigPage({ params }: GuildConfigPageProps) {
             </TabsContent>
           )}
 
+          {/* Commands Tab (SyrupRx specific) */}
+          {botId === "syruprx" && (
+            <TabsContent value="commands" className="p-6">
+              <div className="space-y-6">
+                <div>
+                  <h3 className="text-lg font-semibold text-card-foreground">
+                    Bot Commands
+                  </h3>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    All available slash commands for SyrupRx in this server
+                  </p>
+                </div>
+                <Separator />
+
+                {/* Server Information Commands */}
+                <div className="space-y-4">
+                  <h4 className="flex items-center gap-2 text-sm font-medium text-card-foreground">
+                    <Info className="h-4 w-4 text-primary" />
+                    Server Information
+                  </h4>
+                  <div className="grid gap-3">
+                    <div className="rounded-lg border border-border bg-secondary/30 p-4">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <code className="rounded bg-secondary px-2 py-0.5 text-sm font-mono text-primary">
+                              /serverinfo
+                            </code>
+                            <Badge variant="secondary" className="text-xs">Public</Badge>
+                          </div>
+                          <p className="mt-2 text-sm text-muted-foreground">
+                            Get public server information from Marizma API including server name, player count, owner, admins, and description.
+                          </p>
+                        </div>
+                        <Users className="h-5 w-5 shrink-0 text-muted-foreground" />
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg border border-border bg-secondary/30 p-4">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <code className="rounded bg-secondary px-2 py-0.5 text-sm font-mono text-primary">
+                              /serverplayers
+                            </code>
+                            <Badge variant="secondary" className="text-xs">Public</Badge>
+                          </div>
+                          <p className="mt-2 text-sm text-muted-foreground">
+                            List all players currently online on the game server.
+                          </p>
+                        </div>
+                        <Users className="h-5 w-5 shrink-0 text-muted-foreground" />
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg border border-border bg-secondary/30 p-4">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <code className="rounded bg-secondary px-2 py-0.5 text-sm font-mono text-primary">
+                              /serverqueue
+                            </code>
+                            <Badge variant="secondary" className="text-xs">Public</Badge>
+                          </div>
+                          <p className="mt-2 text-sm text-muted-foreground">
+                            View the current player queue waiting to join the game server.
+                          </p>
+                        </div>
+                        <Clock className="h-5 w-5 shrink-0 text-muted-foreground" />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Moderation Commands */}
+                <div className="space-y-4">
+                  <h4 className="flex items-center gap-2 text-sm font-medium text-card-foreground">
+                    <Shield className="h-4 w-4 text-primary" />
+                    Moderation
+                  </h4>
+                  <div className="grid gap-3">
+                    <div className="rounded-lg border border-border bg-secondary/30 p-4">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <code className="rounded bg-secondary px-2 py-0.5 text-sm font-mono text-primary">
+                              /kickplayer
+                            </code>
+                            <Badge variant="outline" className="text-xs border-amber-500 text-amber-500">Admin+</Badge>
+                          </div>
+                          <p className="mt-2 text-sm text-muted-foreground">
+                            Kick a Roblox player from the server by username or user ID.
+                          </p>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <code className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                              identifier: string (required)
+                            </code>
+                            <code className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                              reason: string (optional)
+                            </code>
+                          </div>
+                        </div>
+                        <UserX className="h-5 w-5 shrink-0 text-muted-foreground" />
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg border border-border bg-secondary/30 p-4">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <code className="rounded bg-secondary px-2 py-0.5 text-sm font-mono text-primary">
+                              /banplayer
+                            </code>
+                            <Badge variant="outline" className="text-xs border-amber-500 text-amber-500">Admin+</Badge>
+                          </div>
+                          <p className="mt-2 text-sm text-muted-foreground">
+                            Ban or unban a Roblox user by username or user ID. Banning also kicks the player immediately.
+                          </p>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <code className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                              user: string (required)
+                            </code>
+                            <code className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                              banned: boolean (required)
+                            </code>
+                          </div>
+                        </div>
+                        <Ban className="h-5 w-5 shrink-0 text-muted-foreground" />
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg border border-border bg-secondary/30 p-4">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <code className="rounded bg-secondary px-2 py-0.5 text-sm font-mono text-primary">
+                              /serverbans
+                            </code>
+                            <Badge variant="outline" className="text-xs border-amber-500 text-amber-500">Admin+</Badge>
+                          </div>
+                          <p className="mt-2 text-sm text-muted-foreground">
+                            View the current ban list on the game server with pagination support.
+                          </p>
+                        </div>
+                        <Ban className="h-5 w-5 shrink-0 text-muted-foreground" />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Server Management Commands */}
+                <div className="space-y-4">
+                  <h4 className="flex items-center gap-2 text-sm font-medium text-card-foreground">
+                    <Settings className="h-4 w-4 text-primary" />
+                    Server Management
+                  </h4>
+                  <div className="grid gap-3">
+                    <div className="rounded-lg border border-border bg-secondary/30 p-4">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <code className="rounded bg-secondary px-2 py-0.5 text-sm font-mono text-primary">
+                              /announce
+                            </code>
+                            <Badge variant="outline" className="text-xs border-amber-500 text-amber-500">Admin+</Badge>
+                          </div>
+                          <p className="mt-2 text-sm text-muted-foreground">
+                            Send an announcement message to all players on the game server.
+                          </p>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <code className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                              message: string (required)
+                            </code>
+                          </div>
+                        </div>
+                        <Megaphone className="h-5 w-5 shrink-0 text-muted-foreground" />
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg border border-border bg-secondary/30 p-4">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <code className="rounded bg-secondary px-2 py-0.5 text-sm font-mono text-primary">
+                              /setbanner
+                            </code>
+                            <Badge variant="outline" className="text-xs border-amber-500 text-amber-500">Admin+</Badge>
+                          </div>
+                          <p className="mt-2 text-sm text-muted-foreground">
+                            Set a banner text that displays on the Maple server.
+                          </p>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <code className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                              text: string (required)
+                            </code>
+                          </div>
+                        </div>
+                        <Flag className="h-5 w-5 shrink-0 text-muted-foreground" />
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg border border-border bg-secondary/30 p-4">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <code className="rounded bg-secondary px-2 py-0.5 text-sm font-mono text-primary">
+                              /setsetting
+                            </code>
+                            <Badge variant="outline" className="text-xs border-amber-500 text-amber-500">Admin+</Badge>
+                          </div>
+                          <p className="mt-2 text-sm text-muted-foreground">
+                            Update Maple server settings like visibility, privacy, and minimum level requirements.
+                          </p>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <code className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                              hidefromlist: boolean (optional)
+                            </code>
+                            <code className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                              private: boolean (optional)
+                            </code>
+                            <code className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                              minlevel: integer (optional)
+                            </code>
+                          </div>
+                        </div>
+                        <Settings className="h-5 w-5 shrink-0 text-muted-foreground" />
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <code className="rounded bg-destructive/20 px-2 py-0.5 text-sm font-mono text-destructive">
+                              /shutdown
+                            </code>
+                            <Badge variant="destructive" className="text-xs">Admin+</Badge>
+                          </div>
+                          <p className="mt-2 text-sm text-muted-foreground">
+                            Immediately shut down the Maple game server. Use with caution.
+                          </p>
+                        </div>
+                        <Power className="h-5 w-5 shrink-0 text-destructive" />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Permission Info */}
+                <div className="rounded-lg border border-primary/30 bg-primary/5 p-4">
+                  <h4 className="mb-3 font-medium text-card-foreground">
+                    Permission Levels
+                  </h4>
+                  <div className="grid gap-2 text-sm">
+                    <div className="flex items-center gap-3">
+                      <Badge variant="secondary" className="text-xs w-16 justify-center">Public</Badge>
+                      <span className="text-muted-foreground">Anyone in the server can use these commands</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <Badge variant="outline" className="text-xs border-amber-500 text-amber-500 w-16 justify-center">Admin+</Badge>
+                      <span className="text-muted-foreground">Requires a configured Admin Role ID from the Setup tab</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </TabsContent>
+          )}
+          
           {/* Channels Tab */}
           <TabsContent value="channels" className="p-6">
             <div className="space-y-6">
