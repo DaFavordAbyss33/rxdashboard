@@ -156,7 +156,7 @@ export function SyrupRxGeneralTab({ guildId }: SyrupRxGeneralTabProps) {
         toast.success(data.message || `${action} executed successfully`)
         
         // Refresh relevant data
-        if (action === "kick" || action === "ban") {
+        if (action === "kick" || action === "ban" || action === "unban") {
           refreshPlayers()
           refreshBans()
         } else if (action === "settings" || action === "banner") {
@@ -678,10 +678,10 @@ export function SyrupRxGeneralTab({ guildId }: SyrupRxGeneralTabProps) {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => executeAction("ban", { userId: userId.toString(), banned: false })}
-                      disabled={isExecuting === "ban"}
+                      onClick={() => executeAction("unban", { userId: userId.toString() })}
+                      disabled={isExecuting === "unban"}
                     >
-                      {isExecuting === "ban" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                      {isExecuting === "unban" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                       Revoke Ban
                     </Button>
                   </div>

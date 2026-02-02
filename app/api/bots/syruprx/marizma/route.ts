@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { cookies } from "next/headers"
 import { getBotDatabase, isBotConfigured } from "@/lib/mongodb"
+import { resolveUserId } from "@/lib/roblox"
 
 export const dynamic = "force-dynamic"
 
@@ -172,6 +173,25 @@ export async function POST(request: Request) {
     let endpoint = ""
     let requestBody: Record<string, unknown> = {}
 
+    // Resolve user identifier (username or ID) to numeric ID for kick/ban
+    let resolvedUserId: number | null = null
+    if (action === "kick" || action === "ban" || action === "unban") {
+      const identifier = params.userId || params.identifier
+      if (!identifier) {
+        return NextResponse.json(
+          { success: false, error: "User identifier is required" },
+          { status: 400 }
+        )
+      }
+      resolvedUserId = await resolveUserId(String(identifier))
+      if (!resolvedUserId) {
+        return NextResponse.json(
+          { success: false, error: `Could not find Roblox user: ${identifier}` },
+          { status: 400 }
+        )
+      }
+    }
+
     switch (action) {
       case "announce":
         endpoint = "v1/server/announce"
@@ -180,15 +200,22 @@ export async function POST(request: Request) {
       case "kick":
         endpoint = "v1/server/moderation/kick"
         requestBody = { 
-          UserId: parseInt(params.userId as string), 
+          UserId: resolvedUserId, 
           ModerationReason: params.reason || undefined 
         }
         break
       case "ban":
         endpoint = "v1/server/banplayer"
         requestBody = { 
-          UserId: parseInt(params.userId as string), 
-          Banned: params.banned 
+          UserId: resolvedUserId, 
+          Banned: true 
+        }
+        break
+      case "unban":
+        endpoint = "v1/server/banplayer"
+        requestBody = { 
+          UserId: resolvedUserId, 
+          Banned: false 
         }
         break
       case "settings":
