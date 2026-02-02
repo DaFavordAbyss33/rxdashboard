@@ -3,7 +3,8 @@ import {
   NewsletterContent, 
   DEFAULT_NEWSLETTER_CONTENT,
   generateBulletList,
-  generateFeatureCard 
+  generateFeatureCard,
+  generateImageBlock
 } from "./components"
 import { getNewsletterIssue } from "@/lib/newsletterMeta"
 
@@ -17,6 +18,8 @@ export function buildNewsletter(content: Partial<NewsletterContent> = {}): strin
 
   const highlightsList = data.highlights ? generateBulletList(data.highlights) : ""
   const featuresHtml = data.features?.map(f => generateFeatureCard(f)).join("") || ""
+  const heroImageHtml = data.heroImage?.url ? generateImageBlock(data.heroImage) : ""
+  const standaloneImagesHtml = data.images?.map(img => generateImageBlock(img)).join("") || ""
 
   return `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
 <html dir="ltr" lang="en">
@@ -84,6 +87,13 @@ export function buildNewsletter(content: Partial<NewsletterContent> = {}): strin
                 </tr>
               </table>
 
+              <!-- Hero Image (if provided) -->
+              ${heroImageHtml ? `
+              <table width="100%" cellpadding="0" cellspacing="0" role="presentation">
+                ${heroImageHtml}
+              </table>
+              ` : ""}
+
               <!-- Spacer -->
               <table width="100%" cellpadding="0" cellspacing="0"><tr><td style="height:14px"></td></tr></table>
 
@@ -111,6 +121,13 @@ export function buildNewsletter(content: Partial<NewsletterContent> = {}): strin
               <table width="100%" cellpadding="0" cellspacing="0" role="presentation">
                 ${featuresHtml}
               </table>
+
+              <!-- STANDALONE IMAGES -->
+              ${standaloneImagesHtml ? `
+              <table width="100%" cellpadding="0" cellspacing="0" role="presentation">
+                ${standaloneImagesHtml}
+              </table>
+              ` : ""}
 
               <!-- CTA BUTTON -->
               ${data.ctaText ? `
