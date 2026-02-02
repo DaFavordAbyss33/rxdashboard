@@ -1,7 +1,22 @@
 import { NextResponse } from "next/server"
-import { BOT_DATABASES, getBotDatabase, isBotConfigured, type BotId } from "@/lib/mongodb"
+import { 
+  isBotConfigured, 
+  getBotSettings, 
+  updateBotSettings,
+  type BotId 
+} from "@/lib/mongodb"
 
 export const dynamic = "force-dynamic"
+
+// Default settings for a bot
+const DEFAULT_SETTINGS = {
+  maintenanceMode: false,
+  debugLogging: false,
+  autoRestart: true,
+  customStatus: "",
+  commandPrefix: "!",
+  enabledFeatures: [],
+}
 
 // Get bot settings from MongoDB
 export async function GET(request: Request) {
@@ -22,32 +37,19 @@ export async function GET(request: Request) {
         settings: {
           botId,
           configured: false,
-          settings: {},
+          data: DEFAULT_SETTINGS,
         },
       })
     }
 
-    const db = await getBotDatabase(botId)
-    if (!db) {
-      return NextResponse.json({
-        success: true,
-        settings: {
-          botId,
-          configured: false,
-          settings: {},
-        },
-      })
-    }
-
-    const settingsCollection = db.collection("settings")
-    const settings = await settingsCollection.findOne({ type: "global" })
+    const settings = await getBotSettings(botId)
 
     return NextResponse.json({
       success: true,
       settings: {
         botId,
         configured: true,
-        settings: settings?.data || {},
+        data: settings || DEFAULT_SETTINGS,
       },
     })
   } catch (error) {
@@ -59,10 +61,10 @@ export async function GET(request: Request) {
   }
 }
 
-// Update bot settings in MongoDB
+// Update bot settings in MongoDB - bots will pick up changes
 export async function POST(request: Request) {
   try {
-    const { botId, settings } = await request.json()
+    const { botId, settings, updatedBy } = await request.json()
 
     if (!botId) {
       return NextResponse.json(
@@ -78,29 +80,18 @@ export async function POST(request: Request) {
       )
     }
 
-    const db = await getBotDatabase(botId)
-    if (!db) {
+    const success = await updateBotSettings(botId, settings, updatedBy)
+    
+    if (!success) {
       return NextResponse.json(
-        { success: false, error: "Failed to connect to database" },
+        { success: false, error: "Failed to update settings" },
         { status: 500 }
       )
     }
 
-    const settingsCollection = db.collection("settings")
-    await settingsCollection.updateOne(
-      { type: "global" },
-      { 
-        $set: { 
-          data: settings,
-          updatedAt: new Date().toISOString(),
-        } 
-      },
-      { upsert: true }
-    )
-
     return NextResponse.json({
       success: true,
-      message: "Settings updated successfully",
+      message: "Settings updated successfully. Bot will sync automatically.",
     })
   } catch (error) {
     console.error("Failed to update bot settings:", error)
