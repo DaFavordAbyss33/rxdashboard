@@ -51,6 +51,7 @@ import {
   Info,
 } from "lucide-react"
 import { toast } from "sonner"
+import { SyrupRxGeneralTab } from "@/components/syruprx/general-tab"
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json())
 
@@ -279,7 +280,7 @@ export default function GuildConfigPage({ params }: GuildConfigPageProps) {
 
       {/* Configuration Tabs */}
       <div className="rounded-lg border border-border bg-card">
-        <Tabs defaultValue={botId === "syruprx" ? "setup" : "general"} className="w-full">
+        <Tabs defaultValue={botId === "syruprx" ? "syruprx-general" : "general"} className="w-full">
           <div className="border-b border-border px-6">
             <TabsList className="h-auto rounded-none border-b-0 bg-transparent p-0">
               {botId !== "syruprx" && (
@@ -288,6 +289,15 @@ export default function GuildConfigPage({ params }: GuildConfigPageProps) {
                   className="rounded-none border-b-2 border-transparent px-4 py-3 data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none"
                 >
                   <Settings className="mr-2 h-4 w-4" />
+                  General
+                </TabsTrigger>
+              )}
+              {botId === "syruprx" && (
+                <TabsTrigger
+                  value="syruprx-general"
+                  className="rounded-none border-b-2 border-transparent px-4 py-3 data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none"
+                >
+                  <Server className="mr-2 h-4 w-4" />
                   General
                 </TabsTrigger>
               )}
@@ -393,6 +403,13 @@ export default function GuildConfigPage({ params }: GuildConfigPageProps) {
               </div>
             </div>
           </TabsContent>
+
+          {/* SyrupRx General Tab */}
+          {botId === "syruprx" && (
+            <TabsContent value="syruprx-general" className="p-6">
+              <SyrupRxGeneralTab guildId={guildId} />
+            </TabsContent>
+          )}
 
           {/* Setup Tab (SyrupRx specific - Marizma Configuration) */}
           {botId === "syruprx" && (
