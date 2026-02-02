@@ -21,6 +21,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
+import { Textarea } from "@/components/ui/textarea"
 import { 
   Server, 
   Settings, 
@@ -33,6 +34,8 @@ import {
   CheckCircle,
   Save,
   Loader2,
+  Mail,
+  Send,
 } from "lucide-react"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useRouter } from "next/navigation"
@@ -76,6 +79,12 @@ export default function AdminPage() {
   const [localSettings, setLocalSettings] = useState<BotSettings>(DEFAULT_SETTINGS)
   const [isSaving, setIsSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState<{ type: "success" | "error"; text: string } | null>(null)
+  
+  // Notice/Email state
+  const [noticeSubject, setNoticeSubject] = useState("")
+  const [noticeMessage, setNoticeMessage] = useState("")
+  const [isSendingNotice, setIsSendingNotice] = useState(false)
+  const [noticeResult, setNoticeResult] = useState<{ type: "success" | "error"; text: string } | null>(null)
 
   const { data: guildsData, error: guildsError, isLoading: guildsLoading } = useSWR(
     "/api/admin/guilds",
@@ -134,6 +143,43 @@ export default function AdminPage() {
   const updateSetting = <K extends keyof BotSettings>(key: K, value: BotSettings[K]) => {
     setLocalSettings(prev => ({ ...prev, [key]: value }))
     setSaveMessage(null) // Clear message when user makes changes
+  }
+
+  // Send notice/email to all users
+  const handleSendNotice = async () => {
+    if (!noticeSubject.trim() || !noticeMessage.trim()) {
+      setNoticeResult({ type: "error", text: "Please fill in both subject and message" })
+      return
+    }
+
+    setIsSendingNotice(true)
+    setNoticeResult(null)
+
+    try {
+      const response = await fetch("/api/admin/notices", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          subject: noticeSubject,
+          message: noticeMessage,
+          sentBy: user?.username || "admin",
+        }),
+      })
+
+      const data = await response.json()
+
+      if (response.ok && data.success) {
+        setNoticeResult({ type: "success", text: `Notice sent to ${data.recipientCount} user(s)!` })
+        setNoticeSubject("")
+        setNoticeMessage("")
+      } else {
+        setNoticeResult({ type: "error", text: data.error || "Failed to send notice" })
+      }
+    } catch (error) {
+      setNoticeResult({ type: "error", text: "Network error. Please try again." })
+    } finally {
+      setIsSendingNotice(false)
+    }
   }
 
   // Redirect non-admins
@@ -226,7 +272,7 @@ export default function AdminPage() {
       </div>
 
       <Tabs defaultValue="servers" className="w-full">
-        <TabsList className="grid w-full max-w-md grid-cols-2">
+        <TabsList className="grid w-full max-w-lg grid-cols-3">
           <TabsTrigger value="servers" className="gap-2">
             <Server className="h-4 w-4" />
             Servers
@@ -234,6 +280,10 @@ export default function AdminPage() {
           <TabsTrigger value="settings" className="gap-2">
             <Settings className="h-4 w-4" />
             Bot Settings
+          </TabsTrigger>
+          <TabsTrigger value="notices" className="gap-2">
+            <Mail className="h-4 w-4" />
+            Notices
           </TabsTrigger>
         </TabsList>
 
@@ -537,6 +587,106 @@ export default function AdminPage() {
                   </Button>
                 </>
               )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Notices Tab */}
+        <TabsContent value="notices" className="mt-6 space-y-6">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <Mail className="h-5 w-5 text-primary" />
+                <CardTitle>Send Notice to Users</CardTitle>
+              </div>
+              <CardDescription>
+                Compose and send email notifications to all users who have enabled creator notices.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="space-y-2">
+                <Label htmlFor="noticeSubject">Subject</Label>
+                <Input
+                  id="noticeSubject"
+                  placeholder="Important update about your bots..."
+                  value={noticeSubject}
+                  onChange={(e) => {
+                    setNoticeSubject(e.target.value)
+                    setNoticeResult(null)
+                  }}
+                  maxLength={100}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="noticeMessage">Message</Label>
+                <Textarea
+                  id="noticeMessage"
+                  placeholder="Write your notice message here..."
+                  value={noticeMessage}
+                  onChange={(e) => {
+                    setNoticeMessage(e.target.value)
+                    setNoticeResult(null)
+                  }}
+                  rows={6}
+                  maxLength={2000}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {noticeMessage.length}/2000 characters
+                </p>
+              </div>
+
+              {/* Notice Result */}
+              {noticeResult && (
+                <div className={`flex items-center gap-2 rounded-lg p-4 ${
+                  noticeResult.type === "success" 
+                    ? "bg-green-500/10 border border-green-500/50" 
+                    : "bg-destructive/10 border border-destructive/50"
+                }`}>
+                  {noticeResult.type === "success" ? (
+                    <CheckCircle className="h-5 w-5 text-green-500" />
+                  ) : (
+                    <AlertTriangle className="h-5 w-5 text-destructive" />
+                  )}
+                  <span className={`text-sm ${
+                    noticeResult.type === "success" ? "text-green-500" : "text-destructive"
+                  }`}>
+                    {noticeResult.text}
+                  </span>
+                </div>
+              )}
+
+              <Button 
+                className="w-full gap-2" 
+                onClick={handleSendNotice}
+                disabled={isSendingNotice || !noticeSubject.trim() || !noticeMessage.trim()}
+              >
+                {isSendingNotice ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Sending...
+                  </>
+                ) : (
+                  <>
+                    <Send className="h-4 w-4" />
+                    Send Notice
+                  </>
+                )}
+              </Button>
+            </CardContent>
+          </Card>
+
+          {/* Notice History (placeholder for future) */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Recent Notices</CardTitle>
+              <CardDescription>Previously sent notices will appear here</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-col items-center justify-center py-8 text-center">
+                <Mail className="h-12 w-12 text-muted-foreground/50" />
+                <p className="mt-4 text-muted-foreground">No notices sent yet</p>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
