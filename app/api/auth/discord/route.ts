@@ -3,14 +3,12 @@ import { NextResponse } from "next/server"
 const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID!
 const REDIRECT_URI = `${process.env.NEXTAUTH_URL}/api/auth/discord/callback`
 
-// Scopes matching your Discord application configuration
+// Standard OAuth scopes - only use scopes that don't require special permissions
 const SCOPES = [
   "identify",
   "email", 
   "guilds",
-  "guilds.join",
   "guilds.members.read",
-  "presences.read",
 ].join(" ")
 
 export async function GET() {
