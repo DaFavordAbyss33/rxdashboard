@@ -122,6 +122,13 @@ export function buildNewsletter(content: Partial<NewsletterContent> = {}): strin
                 ${featuresHtml}
               </table>
 
+              <!-- STANDALONE IMAGES -->
+              ${standaloneImagesHtml ? `
+              <table width="100%" cellpadding="0" cellspacing="0" role="presentation">
+                ${standaloneImagesHtml}
+              </table>
+              ` : ""}
+
               <!-- CTA BUTTON -->
               ${data.ctaText ? `
               <table width="100%" cellpadding="0" cellspacing="0" role="presentation">

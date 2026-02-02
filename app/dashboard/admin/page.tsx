@@ -51,6 +51,7 @@ import {
   Calendar,
   Radio,
   Clock,
+  ImageIcon,
 } from "lucide-react"
 import {
   DropdownMenu,
@@ -111,9 +112,11 @@ export default function AdminPage() {
   const [newsletterContent, setNewsletterContent] = useState({
     heroTitle: "NEWSLETTER",
     heroSubtitle: "Quick updates on bots, new features, and what's shipping next.",
+    heroImage: { url: "", alt: "", width: 560, linkUrl: "" },
     highlightsIntro: "A quick look at what happened this month and upcoming changes you should know about.",
     highlights: ["New dashboard UI with improved navigation", "Bot status monitoring improvements", "Performance optimizations across all bots"],
-    features: [{ title: "Improved Bot Monitoring", description: "Real-time status updates and incident tracking for all your bots.", linkText: "View Dashboard", linkUrl: "https://rxsystems.app/dashboard" }],
+    features: [{ title: "Improved Bot Monitoring", description: "Real-time status updates and incident tracking for all your bots.", linkText: "View Dashboard", linkUrl: "https://rxsystems.app/dashboard", image: { url: "", alt: "", width: 520 } }],
+    images: [] as Array<{ url: string; alt: string; width: number; linkUrl: string }>,
     ctaText: "Open Dashboard",
     ctaUrl: "https://rxsystems.app/dashboard",
   })
@@ -1000,6 +1003,76 @@ export default function AdminPage() {
 
               <Separator />
 
+              {/* Hero Image */}
+              <div className="space-y-4">
+                <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-2">
+                  <ImageIcon className="h-4 w-4" />
+                  Hero Image (Optional)
+                </h3>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>Image URL</Label>
+                    <Input
+                      value={newsletterContent.heroImage.url}
+                      onChange={(e) => setNewsletterContent(prev => ({
+                        ...prev,
+                        heroImage: { ...prev.heroImage, url: e.target.value }
+                      }))}
+                      placeholder="https://example.com/image.png"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Alt Text</Label>
+                    <Input
+                      value={newsletterContent.heroImage.alt}
+                      onChange={(e) => setNewsletterContent(prev => ({
+                        ...prev,
+                        heroImage: { ...prev.heroImage, alt: e.target.value }
+                      }))}
+                      placeholder="Description of the image"
+                    />
+                  </div>
+                </div>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>Width (px)</Label>
+                    <Input
+                      type="number"
+                      value={newsletterContent.heroImage.width}
+                      onChange={(e) => setNewsletterContent(prev => ({
+                        ...prev,
+                        heroImage: { ...prev.heroImage, width: parseInt(e.target.value) || 560 }
+                      }))}
+                      placeholder="560"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Link URL (Optional)</Label>
+                    <Input
+                      value={newsletterContent.heroImage.linkUrl}
+                      onChange={(e) => setNewsletterContent(prev => ({
+                        ...prev,
+                        heroImage: { ...prev.heroImage, linkUrl: e.target.value }
+                      }))}
+                      placeholder="https://rxsystems.app"
+                    />
+                  </div>
+                </div>
+                {newsletterContent.heroImage.url && (
+                  <div className="rounded-lg border p-2 bg-muted/30">
+                    <p className="text-xs text-muted-foreground mb-2">Preview:</p>
+                    <img 
+                      src={newsletterContent.heroImage.url} 
+                      alt={newsletterContent.heroImage.alt || "Hero preview"} 
+                      className="max-w-full h-auto rounded max-h-32 object-contain"
+                      onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+                    />
+                  </div>
+                )}
+              </div>
+
+              <Separator />
+
               {/* Highlights Section */}
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
@@ -1064,7 +1137,7 @@ export default function AdminPage() {
                     size="sm"
                     onClick={() => setNewsletterContent(prev => ({
                       ...prev,
-                      features: [...prev.features, { title: "", description: "", linkText: "", linkUrl: "" }]
+                      features: [...prev.features, { title: "", description: "", linkText: "", linkUrl: "", image: { url: "", alt: "", width: 520 } }]
                     }))}
                   >
                     <Plus className="mr-2 h-4 w-4" />
@@ -1138,9 +1211,158 @@ export default function AdminPage() {
                           placeholder="https://rxsystems.app/dashboard"
                         />
                       </div>
+                      {/* Feature Image */}
+                      <div className="pt-2 border-t border-border/50 mt-3">
+                        <p className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1">
+                          <ImageIcon className="h-3 w-3" />
+                          Feature Image (Optional)
+                        </p>
+                        <div className="grid gap-2 md:grid-cols-3">
+                          <Input
+                            value={feature.image?.url || ""}
+                            onChange={(e) => {
+                              const newFeatures = [...newsletterContent.features]
+                              newFeatures[index] = { ...feature, image: { ...feature.image, url: e.target.value, alt: feature.image?.alt || "", width: feature.image?.width || 520 } }
+                              setNewsletterContent(prev => ({ ...prev, features: newFeatures }))
+                            }}
+                            placeholder="Image URL"
+                          />
+                          <Input
+                            value={feature.image?.alt || ""}
+                            onChange={(e) => {
+                              const newFeatures = [...newsletterContent.features]
+                              newFeatures[index] = { ...feature, image: { ...feature.image, url: feature.image?.url || "", alt: e.target.value, width: feature.image?.width || 520 } }
+                              setNewsletterContent(prev => ({ ...prev, features: newFeatures }))
+                            }}
+                            placeholder="Alt text"
+                          />
+                          <Input
+                            type="number"
+                            value={feature.image?.width || 520}
+                            onChange={(e) => {
+                              const newFeatures = [...newsletterContent.features]
+                              newFeatures[index] = { ...feature, image: { ...feature.image, url: feature.image?.url || "", alt: feature.image?.alt || "", width: parseInt(e.target.value) || 520 } }
+                              setNewsletterContent(prev => ({ ...prev, features: newFeatures }))
+                            }}
+                            placeholder="Width"
+                          />
+                        </div>
+                      </div>
                     </CardContent>
                   </Card>
                 ))}
+              </div>
+
+              <Separator />
+
+              {/* Standalone Images Section */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-2">
+                    <ImageIcon className="h-4 w-4" />
+                    Additional Images
+                  </h3>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setNewsletterContent(prev => ({
+                      ...prev,
+                      images: [...prev.images, { url: "", alt: "", width: 560, linkUrl: "" }]
+                    }))}
+                  >
+                    <Plus className="mr-2 h-4 w-4" />
+                    Add Image
+                  </Button>
+                </div>
+                {newsletterContent.images.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No additional images added. Click "Add Image" to include standalone images in your newsletter.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {newsletterContent.images.map((image, index) => (
+                      <Card key={index} className="bg-muted/30">
+                        <CardContent className="pt-4 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <p className="text-sm font-medium">Image {index + 1}</p>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                const newImages = newsletterContent.images.filter((_, i) => i !== index)
+                                setNewsletterContent(prev => ({ ...prev, images: newImages }))
+                              }}
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </div>
+                          <div className="grid gap-3 md:grid-cols-2">
+                            <div className="space-y-2">
+                              <Label>Image URL</Label>
+                              <Input
+                                value={image.url}
+                                onChange={(e) => {
+                                  const newImages = [...newsletterContent.images]
+                                  newImages[index] = { ...image, url: e.target.value }
+                                  setNewsletterContent(prev => ({ ...prev, images: newImages }))
+                                }}
+                                placeholder="https://example.com/image.png"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label>Alt Text</Label>
+                              <Input
+                                value={image.alt}
+                                onChange={(e) => {
+                                  const newImages = [...newsletterContent.images]
+                                  newImages[index] = { ...image, alt: e.target.value }
+                                  setNewsletterContent(prev => ({ ...prev, images: newImages }))
+                                }}
+                                placeholder="Description of the image"
+                              />
+                            </div>
+                          </div>
+                          <div className="grid gap-3 md:grid-cols-2">
+                            <div className="space-y-2">
+                              <Label>Width (px)</Label>
+                              <Input
+                                type="number"
+                                value={image.width}
+                                onChange={(e) => {
+                                  const newImages = [...newsletterContent.images]
+                                  newImages[index] = { ...image, width: parseInt(e.target.value) || 560 }
+                                  setNewsletterContent(prev => ({ ...prev, images: newImages }))
+                                }}
+                                placeholder="560"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label>Link URL (Optional)</Label>
+                              <Input
+                                value={image.linkUrl}
+                                onChange={(e) => {
+                                  const newImages = [...newsletterContent.images]
+                                  newImages[index] = { ...image, linkUrl: e.target.value }
+                                  setNewsletterContent(prev => ({ ...prev, images: newImages }))
+                                }}
+                                placeholder="https://rxsystems.app"
+                              />
+                            </div>
+                          </div>
+                          {image.url && (
+                            <div className="rounded-lg border p-2 bg-background/50">
+                              <p className="text-xs text-muted-foreground mb-2">Preview:</p>
+                              <img 
+                                src={image.url} 
+                                alt={image.alt || "Image preview"} 
+                                className="max-w-full h-auto rounded max-h-24 object-contain"
+                                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+                              />
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <Separator />
