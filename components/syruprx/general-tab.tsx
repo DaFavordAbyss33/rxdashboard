@@ -102,6 +102,8 @@ export function SyrupRxGeneralTab({ guildId }: SyrupRxGeneralTabProps) {
   const [isPrivate, setIsPrivate] = useState(false)
   const [minLevel, setMinLevel] = useState("")
   const [banSearch, setBanSearch] = useState("")
+  const [banPage, setBanPage] = useState(1)
+  const BANS_PER_PAGE = 10
 
   // Roblox user data cache (includes username + headshot)
   const [robloxUsers, setRobloxUsers] = useState<Record<number, {
@@ -138,13 +140,11 @@ export function SyrupRxGeneralTab({ guildId }: SyrupRxGeneralTabProps) {
     }
   }, [loadedIds])
 
-  // Load user data when lists change
+  // Load user data when lists change (excludes bans - those are loaded per page)
   useEffect(() => {
     const allIds: number[] = []
     
-    if (bansData?.success && bansData.data?.data?.Bans) {
-      allIds.push(...bansData.data.data.Bans)
-    }
+    // Don't load bans here - they load per page to avoid rate limits
     if (playersData?.success && playersData.data?.data?.Players) {
       allIds.push(...playersData.data.data.Players)
     }
@@ -166,7 +166,7 @@ export function SyrupRxGeneralTab({ guildId }: SyrupRxGeneralTabProps) {
     if (allIds.length > 0) {
       loadRobloxUsers(allIds)
     }
-  }, [bansData, playersData, queueData, serverInfoData, loadRobloxUsers])
+  }, [playersData, queueData, serverInfoData, loadRobloxUsers])
 
   const executeAction = async (action: string, params: Record<string, unknown>) => {
     setIsExecuting(action)
@@ -221,6 +221,25 @@ export function SyrupRxGeneralTab({ guildId }: SyrupRxGeneralTabProps) {
       user?.displayName?.toLowerCase().includes(searchLower)
     )
   })
+
+  // Pagination for filtered bans
+  const totalBanPages = Math.ceil(filteredBans.length / BANS_PER_PAGE)
+  const paginatedBans = filteredBans.slice(
+    (banPage - 1) * BANS_PER_PAGE,
+    banPage * BANS_PER_PAGE
+  )
+
+  // Reset to page 1 when search changes
+  useEffect(() => {
+    setBanPage(1)
+  }, [banSearch])
+
+  // Load Roblox user data only for current page of bans
+  useEffect(() => {
+    if (paginatedBans.length > 0) {
+      loadRobloxUsers(paginatedBans)
+    }
+  }, [paginatedBans.join(","), loadRobloxUsers])
 
   const isConfigured = serverInfoData?.success !== false || !serverInfoData?.error?.includes("not configured")
 
@@ -691,14 +710,14 @@ export function SyrupRxGeneralTab({ guildId }: SyrupRxGeneralTabProps) {
           />
         </div>
 
-        <div className="max-h-64 overflow-y-auto">
+        <div className="space-y-2">
           {bansLoading ? (
             <div className="space-y-2">
               {[1, 2, 3].map(i => <Skeleton key={i} className="h-12 w-full" />)}
             </div>
-          ) : filteredBans.length > 0 ? (
+          ) : paginatedBans.length > 0 ? (
             <div className="space-y-2">
-              {filteredBans.map((userId) => {
+              {paginatedBans.map((userId) => {
                 const user = robloxUsers[userId]
                 return (
                   <div
@@ -754,6 +773,36 @@ export function SyrupRxGeneralTab({ guildId }: SyrupRxGeneralTabProps) {
             </p>
           )}
         </div>
+
+        {/* Pagination Controls */}
+        {totalBanPages > 1 && (
+          <div className="mt-4 flex items-center justify-between border-t border-border pt-4">
+            <p className="text-sm text-muted-foreground">
+              Showing {((banPage - 1) * BANS_PER_PAGE) + 1}-{Math.min(banPage * BANS_PER_PAGE, filteredBans.length)} of {filteredBans.length} banned players
+            </p>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setBanPage(p => Math.max(1, p - 1))}
+                disabled={banPage === 1}
+              >
+                Previous
+              </Button>
+              <span className="text-sm text-muted-foreground">
+                Page {banPage} of {totalBanPages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setBanPage(p => Math.min(totalBanPages, p + 1))}
+                disabled={banPage === totalBanPages}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
