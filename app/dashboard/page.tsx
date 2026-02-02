@@ -1,17 +1,30 @@
 "use client"
 
 import Link from "next/link"
+import { useRouter } from "next/navigation"
+import { useEffect } from "react"
 import useSWR from "swr"
+import { useAuth } from "@/lib/auth-context"
 import { BotStatusCard } from "@/components/dashboard/bot-status-card"
 import { IncidentsList } from "@/components/dashboard/incidents-list"
 import { StatsCard } from "@/components/dashboard/stats-card"
-import { Bot, Server, AlertTriangle, DollarSign, RefreshCw } from "lucide-react"
+import { Bot, Server, AlertTriangle, DollarSign, RefreshCw, Shield } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json())
 
 export default function DashboardPage() {
+  const { isAdmin, isAdminLoading, isAuthenticated, isLoading } = useAuth()
+  const router = useRouter()
+
+  // Redirect non-admins
+  useEffect(() => {
+    if (!isLoading && !isAdminLoading && isAuthenticated && !isAdmin) {
+      router.push("/dashboard/bots")
+    }
+  }, [isAdmin, isAdminLoading, isAuthenticated, isLoading, router])
+
   const { data: botsData, error: botsError, isLoading: botsLoading, mutate: mutateBots } = useSWR(
     "/api/bots",
     fetcher,
@@ -39,6 +52,32 @@ export default function DashboardPage() {
   const bots = botsData?.bots || []
   const stats = statsData || {}
   const incidents = incidentsData?.incidents || []
+
+  // Show loading while checking admin status
+  if (isLoading || isAdminLoading) {
+    return (
+      <div className="flex min-h-[50vh] items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+          <p className="text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Show access denied for non-admins
+  if (!isAdmin) {
+    return (
+      <div className="flex min-h-[50vh] flex-col items-center justify-center gap-4">
+        <Shield className="h-16 w-16 text-destructive" />
+        <h2 className="text-2xl font-bold">Access Denied</h2>
+        <p className="text-muted-foreground">You do not have permission to access this page.</p>
+        <Button onClick={() => router.push("/dashboard/bots")}>
+          Go to Bots
+        </Button>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-8">
