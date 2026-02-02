@@ -2,16 +2,29 @@
 
 import { useState } from "react"
 import Link from "next/link"
+import useSWR from "swr"
 import { ArrowLeft, Check, Copy, ExternalLink, AlertCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Skeleton } from "@/components/ui/skeleton"
 import { BOT_WEBHOOK_CONFIG } from "@/lib/subscription-products"
-import { bots } from "@/lib/data"
+
+const fetcher = (url: string) => fetch(url).then((res) => res.json())
+
+interface Bot {
+  id: string
+  name: string
+  icon: string
+  hasSubscription?: boolean
+}
 
 export default function StripeSetupPage() {
   const [copiedId, setCopiedId] = useState<string | null>(null)
 
+  // Fetch bots from API
+  const { data: botsData, isLoading } = useSWR("/api/bots", fetcher)
+  const bots = (botsData?.bots || []) as Bot[]
   const premiumBots = bots.filter((bot) => bot.hasSubscription)
 
   const copyToClipboard = (text: string, id: string) => {
@@ -21,6 +34,16 @@ export default function StripeSetupPage() {
   }
 
   const baseUrl = typeof window !== "undefined" ? window.location.origin : "https://your-domain.com"
+
+  if (isLoading) {
+    return (
+      <div className="space-y-6">
+        <Skeleton className="h-12 w-64" />
+        <Skeleton className="h-48 w-full" />
+        <Skeleton className="h-48 w-full" />
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">

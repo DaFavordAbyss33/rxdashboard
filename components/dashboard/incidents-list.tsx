@@ -1,16 +1,24 @@
 "use client"
 
 import type { Incident } from "@/lib/types"
-import { getBotById } from "@/lib/data"
 import { cn } from "@/lib/utils"
 import { AlertCircle, AlertTriangle, Info } from "lucide-react"
 import { formatDistanceToNow } from "date-fns"
 
-interface IncidentsListProps {
-  incidents: Incident[]
+interface Bot {
+  id: string
+  name: string
 }
 
-export function IncidentsList({ incidents }: IncidentsListProps) {
+interface IncidentsListProps {
+  incidents: Incident[]
+  bots?: Bot[]
+}
+
+export function IncidentsList({ incidents, bots = [] }: IncidentsListProps) {
+  // Create a map for quick bot lookup
+  const botMap = new Map(bots.map((bot) => [bot.id, bot]))
+
   if (incidents.length === 0) {
     return (
       <div className="rounded-lg border border-border bg-card p-8 text-center">
@@ -23,7 +31,7 @@ export function IncidentsList({ incidents }: IncidentsListProps) {
     <div className="rounded-lg border border-border bg-card">
       <div className="divide-y divide-border">
         {incidents.map((incident) => {
-          const bot = getBotById(incident.botId)
+          const bot = botMap.get(incident.botId)
           const icons = {
             error: AlertCircle,
             warning: AlertTriangle,

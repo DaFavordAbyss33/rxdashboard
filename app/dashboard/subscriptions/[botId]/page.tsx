@@ -1,12 +1,14 @@
 "use client"
 
-import { use, useState } from "react"
+import { use, useState, useMemo } from "react"
 import Image from "next/image"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
+import useSWR from "swr"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { Skeleton } from "@/components/ui/skeleton"
 import {
   Dialog,
   DialogContent,
@@ -16,9 +18,24 @@ import {
 } from "@/components/ui/dialog"
 import { Check, Crown, ArrowLeft, Server, Sparkles } from "lucide-react"
 import { useAuth } from "@/lib/auth-context"
-import { bots, guilds, installations } from "@/lib/data"
 import { getProductsByBotId, formatPrice, type SubscriptionProduct } from "@/lib/subscription-products"
 import SubscriptionCheckout from "@/components/checkout"
+
+const fetcher = (url: string) => fetch(url).then((res) => res.json())
+
+interface Bot {
+  id: string
+  name: string
+  description: string
+  icon: string
+  hasSubscription?: boolean
+}
+
+interface BotGuild {
+  id: string
+  name: string
+  icon: string | null
+}
 
 export default function BotSubscriptionPage({
   params,
@@ -26,15 +43,46 @@ export default function BotSubscriptionPage({
   params: Promise<{ botId: string }>
 }) {
   const { botId } = use(params)
-  const { user } = useAuth()
+  const { user, managableGuilds } = useAuth()
   const router = useRouter()
 
   const [selectedGuild, setSelectedGuild] = useState<string | null>(null)
   const [selectedProduct, setSelectedProduct] = useState<SubscriptionProduct | null>(null)
   const [showCheckout, setShowCheckout] = useState(false)
 
-  const bot = bots.find((b) => b.id === botId)
+  // Fetch bots from API
+  const { data: botsData, isLoading: botsLoading } = useSWR("/api/bots", fetcher)
+  
+  // Fetch guilds the bot is installed in
+  const { data: guildsData, isLoading: guildsLoading } = useSWR(
+    `/api/bots/${botId}/guilds`,
+    fetcher
+  )
+
+  const bot = botsData?.bots?.find((b: Bot) => b.id === botId) as Bot | undefined
   const products = getProductsByBotId(botId)
+
+  const installedGuildIds = new Set(
+    (guildsData?.guilds || []).map((g: BotGuild) => g.id)
+  )
+
+  // Get user's manageable guilds that have this bot installed
+  const installedGuilds = useMemo(() => {
+    return managableGuilds.filter((guild) => installedGuildIds.has(guild.id))
+  }, [managableGuilds, installedGuildIds])
+
+  // Loading state
+  if (botsLoading) {
+    return (
+      <div className="space-y-8">
+        <Skeleton className="h-20 w-full" />
+        <div className="grid gap-6 md:grid-cols-2">
+          <Skeleton className="h-64 w-full" />
+          <Skeleton className="h-64 w-full" />
+        </div>
+      </div>
+    )
+  }
 
   if (!bot) {
     return (
@@ -49,10 +97,6 @@ export default function BotSubscriptionPage({
       </div>
     )
   }
-
-  // Get guilds with this bot installed
-  const installedGuildIds = installations.filter((i) => i.botId === botId).map((i) => i.guildId)
-  const installedGuilds = guilds.filter((g) => installedGuildIds.includes(g.id))
 
   // Mock subscription status (in real app, fetch from Stripe)
   const mockSubscriptions: Record<string, { active: boolean; productId?: string; expiresAt?: Date }> = {
@@ -252,7 +296,7 @@ export default function BotSubscriptionPage({
               Subscribe to {bot.name} - {selectedProduct?.name}
             </DialogTitle>
             <DialogDescription>
-              {selectedGuild && guilds.find((g) => g.id === selectedGuild)?.name} -{" "}
+              {selectedGuild && managableGuilds.find((g) => g.id === selectedGuild)?.name} -{" "}
               {selectedProduct && formatPrice(selectedProduct.priceInCents)}/{selectedProduct?.interval}
             </DialogDescription>
           </DialogHeader>
@@ -260,7 +304,7 @@ export default function BotSubscriptionPage({
             <SubscriptionCheckout
               productId={selectedProduct.id}
               guildId={selectedGuild}
-              guildName={guilds.find((g) => g.id === selectedGuild)?.name || ""}
+              guildName={managableGuilds.find((g) => g.id === selectedGuild)?.name || ""}
               userId={user.id}
             />
           )}

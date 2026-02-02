@@ -1,36 +1,52 @@
 "use client"
 
-import { useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
+import useSWR from "swr"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { Skeleton } from "@/components/ui/skeleton"
 import { Check, Crown, ArrowRight, Sparkles } from "lucide-react"
 import { useAuth } from "@/lib/auth-context"
-import { bots, guilds, installations } from "@/lib/data"
 import {
   SUBSCRIPTION_PRODUCTS,
   getProductsByBotId,
   formatPrice,
-  type SubscriptionProduct,
 } from "@/lib/subscription-products"
 
+const fetcher = (url: string) => fetch(url).then((res) => res.json())
+
+interface Bot {
+  id: string
+  name: string
+  description: string
+  icon: string
+  hasSubscription?: boolean
+  guildsCount: number
+}
+
 export default function SubscriptionsPage() {
-  const { user } = useAuth()
+  const { user, managableGuilds } = useAuth()
+
+  // Fetch bots from API
+  const { data: botsData, isLoading } = useSWR("/api/bots", fetcher)
+
+  const bots = botsData?.bots || []
 
   // Get all bots that have subscription tiers
-  const premiumBots = bots.filter((bot) => bot.hasSubscription)
+  const premiumBots = bots.filter((bot: Bot) => bot.hasSubscription)
 
-  // Get guilds that the user has access to (for demo, show all guilds)
-  const userGuilds = guilds
-
-  // Get installed guilds for each premium bot
-  const getInstalledGuilds = (botId: string) => {
-    return installations
-      .filter((i) => i.botId === botId)
-      .map((i) => guilds.find((g) => g.id === i.guildId))
-      .filter(Boolean)
+  if (isLoading) {
+    return (
+      <div className="space-y-8">
+        <Skeleton className="h-10 w-48" />
+        <div className="grid gap-6 md:grid-cols-2">
+          <Skeleton className="h-64 w-full" />
+          <Skeleton className="h-64 w-full" />
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -44,9 +60,8 @@ export default function SubscriptionsPage() {
 
       {/* Premium Bots Overview */}
       <div className="grid gap-6 md:grid-cols-2">
-        {premiumBots.map((bot) => {
+        {premiumBots.map((bot: Bot) => {
           const products = getProductsByBotId(bot.id)
-          const installedGuilds = getInstalledGuilds(bot.id)
           const monthlyProduct = products.find((p) => p.interval === "month")
 
           return (
@@ -94,7 +109,7 @@ export default function SubscriptionsPage() {
 
                 <div className="pt-2">
                   <p className="mb-2 text-sm text-muted-foreground">
-                    {installedGuilds.length} server{installedGuilds.length !== 1 ? "s" : ""} with{" "}
+                    {bot.guildsCount} server{bot.guildsCount !== 1 ? "s" : ""} with{" "}
                     {bot.name} installed
                   </p>
                   <Link href={`/dashboard/subscriptions/${bot.id}`}>
@@ -116,7 +131,7 @@ export default function SubscriptionsPage() {
         <h2 className="mb-4 text-xl font-semibold text-foreground">All Premium Plans</h2>
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           {SUBSCRIPTION_PRODUCTS.map((product) => {
-            const bot = bots.find((b) => b.id === product.botId)
+            const bot = bots.find((b: Bot) => b.id === product.botId)
             return (
               <Card
                 key={product.id}

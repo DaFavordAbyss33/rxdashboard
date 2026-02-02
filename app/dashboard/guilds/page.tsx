@@ -1,14 +1,55 @@
 "use client"
 
 import Link from "next/link"
+import useSWR from "swr"
 import { useAuth } from "@/lib/auth-context"
-import { bots, getInstallationsForGuild } from "@/lib/data"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Skeleton } from "@/components/ui/skeleton"
 import { Server, Bot as BotIcon, Settings, ExternalLink } from "lucide-react"
+
+const fetcher = (url: string) => fetch(url).then((res) => res.json())
+
+interface Bot {
+  id: string
+  name: string
+  isPrivate?: boolean
+}
 
 export default function GuildsPage() {
   const { managableGuilds } = useAuth()
+
+  // Fetch all bots
+  const { data: botsData, isLoading } = useSWR("/api/bots", fetcher)
+  const bots = (botsData?.bots || []) as Bot[]
+
+  // Fetch all bot guilds in parallel
+  const botGuildsQueries = bots.map((bot) => 
+    useSWR(`/api/bots/${bot.id}/guilds`, fetcher)
+  )
+
+  // Create a map of guildId -> installed botIds
+  const guildBotMap = new Map<string, string[]>()
+  bots.forEach((bot, index) => {
+    const guildsData = botGuildsQueries[index]?.data
+    if (guildsData?.guilds) {
+      guildsData.guilds.forEach((guild: { id: string }) => {
+        const existing = guildBotMap.get(guild.id) || []
+        existing.push(bot.id)
+        guildBotMap.set(guild.id, existing)
+      })
+    }
+  })
+
+  if (isLoading) {
+    return (
+      <div className="space-y-6">
+        <Skeleton className="h-10 w-48" />
+        <Skeleton className="h-40 w-full" />
+        <Skeleton className="h-40 w-full" />
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">
@@ -23,10 +64,8 @@ export default function GuildsPage() {
       {/* Guild List */}
       <div className="space-y-4">
         {managableGuilds.map((guild) => {
-          const installations = getInstallationsForGuild(guild.id)
-          const installedBots = bots.filter((bot) =>
-            installations.some((i) => i.botId === bot.id)
-          )
+          const installedBotIds = guildBotMap.get(guild.id) || []
+          const installedBots = bots.filter((bot) => installedBotIds.includes(bot.id))
 
           return (
             <div
