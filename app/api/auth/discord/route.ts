@@ -8,9 +8,9 @@ const SCOPES = [
   "identify",
   "email", 
   "guilds",
+  "guilds.join",
   "guilds.members.read",
-  "guilds.channels.read",
-  "applications.commands.permissions.update",
+  "presences.read",
 ].join(" ")
 
 export async function GET() {
