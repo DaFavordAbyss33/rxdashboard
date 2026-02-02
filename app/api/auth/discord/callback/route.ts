@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from "next/server"
 import { cookies } from "next/headers"
 import { ADMIN_CONFIG } from "@/lib/admin"
 
-const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID!
-const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET!
-const REDIRECT_URI = `${process.env.NEXTAUTH_URL}/api/auth/discord/callback`
+const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID || ""
+const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET || ""
+const NEXTAUTH_URL = process.env.NEXTAUTH_URL || "https://rxsystems.app"
+const REDIRECT_URI = `${NEXTAUTH_URL}/api/auth/discord/callback`
 
 interface DiscordTokenResponse {
   access_token: string
@@ -40,14 +41,23 @@ export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams
   const code = searchParams.get("code")
   const error = searchParams.get("error")
+  const errorDescription = searchParams.get("error_description")
+
+  console.log("[v0] Discord callback received - code:", !!code, "error:", error)
+
+  // Check for missing environment variables
+  if (!DISCORD_CLIENT_ID || !DISCORD_CLIENT_SECRET) {
+    console.error("[v0] Missing Discord credentials")
+    return NextResponse.redirect(new URL("/?error=missing_credentials", NEXTAUTH_URL))
+  }
 
   if (error) {
-    console.error("Discord OAuth error:", error)
-    return NextResponse.redirect(new URL("/?error=oauth_error", process.env.NEXTAUTH_URL!))
+    console.error("[v0] Discord OAuth error:", error, errorDescription)
+    return NextResponse.redirect(new URL(`/?error=oauth_error&message=${encodeURIComponent(errorDescription || error)}`, NEXTAUTH_URL))
   }
 
   if (!code) {
-    return NextResponse.redirect(new URL("/?error=no_code", process.env.NEXTAUTH_URL!))
+    return NextResponse.redirect(new URL("/?error=no_code", NEXTAUTH_URL))
   }
 
   try {
@@ -68,8 +78,8 @@ export async function GET(request: NextRequest) {
 
     if (!tokenResponse.ok) {
       const errorData = await tokenResponse.text()
-      console.error("Token exchange failed:", errorData)
-      return NextResponse.redirect(new URL("/?error=token_exchange_failed", process.env.NEXTAUTH_URL!))
+      console.error("[v0] Token exchange failed:", errorData)
+      return NextResponse.redirect(new URL("/?error=token_exchange_failed", NEXTAUTH_URL))
     }
 
     const tokens: DiscordTokenResponse = await tokenResponse.json()
@@ -82,8 +92,8 @@ export async function GET(request: NextRequest) {
     })
 
     if (!userResponse.ok) {
-      console.error("Failed to fetch user info")
-      return NextResponse.redirect(new URL("/?error=user_fetch_failed", process.env.NEXTAUTH_URL!))
+      console.error("[v0] Failed to fetch user info")
+      return NextResponse.redirect(new URL("/?error=user_fetch_failed", NEXTAUTH_URL))
     }
 
     const user: DiscordUser = await userResponse.json()
@@ -158,10 +168,12 @@ export async function GET(request: NextRequest) {
       path: "/",
     })
 
+    console.log("[v0] Session created for user:", user.username, "isAdmin:", isAdmin)
+
     // Redirect to dashboard
-    return NextResponse.redirect(new URL("/dashboard/bots", process.env.NEXTAUTH_URL!))
+    return NextResponse.redirect(new URL("/dashboard/bots", NEXTAUTH_URL))
   } catch (error) {
-    console.error("OAuth callback error:", error)
-    return NextResponse.redirect(new URL("/?error=callback_failed", process.env.NEXTAUTH_URL!))
+    console.error("[v0] OAuth callback error:", error)
+    return NextResponse.redirect(new URL("/?error=callback_failed", NEXTAUTH_URL))
   }
 }
