@@ -21,6 +21,8 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
+import { Textarea } from "@/components/ui/textarea"
+import { Separator } from "@/components/ui/separator"
 import { 
   Server, 
   Settings, 
@@ -42,6 +44,13 @@ import {
   Pencil,
   ExternalLink,
   MoreHorizontal,
+  Plus,
+  X,
+  Users,
+  UserPlus,
+  Calendar,
+  Radio,
+  Clock,
 } from "lucide-react"
 import {
   DropdownMenu,
@@ -98,11 +107,62 @@ export default function AdminPage() {
   const [templateResult, setTemplateResult] = useState<{ type: "success" | "error"; text: string } | null>(null)
   const [templateAction, setTemplateAction] = useState<{ id: string; action: string } | null>(null)
 
+  // Newsletter editor state
+  const [newsletterContent, setNewsletterContent] = useState({
+    heroTitle: "NEWSLETTER",
+    heroSubtitle: "Quick updates on bots, new features, and what's shipping next.",
+    highlightsIntro: "A quick look at what happened this month and upcoming changes you should know about.",
+    highlights: ["New dashboard UI with improved navigation", "Bot status monitoring improvements", "Performance optimizations across all bots"],
+    features: [{ title: "Improved Bot Monitoring", description: "Real-time status updates and incident tracking for all your bots.", linkText: "View Dashboard", linkUrl: "https://rxsystems.app/dashboard" }],
+    ctaText: "Open Dashboard",
+    ctaUrl: "https://rxsystems.app/dashboard",
+  })
+  const [previewHtml, setPreviewHtml] = useState<string>("")
+  const [isGeneratingPreview, setIsGeneratingPreview] = useState(false)
+  const [showPreview, setShowPreview] = useState(false)
+
+  // Contacts state
+  const [isSyncingContacts, setIsSyncingContacts] = useState(false)
+  const [contactsResult, setContactsResult] = useState<{ type: "success" | "error"; text: string; stats?: { created: number; updated: number; failed: number; total: number } } | null>(null)
+
+  // Fetch contacts from Resend
+  const { data: contactsData, isLoading: contactsLoading, mutate: mutateContacts } = useSWR(
+    "/api/admin/contacts",
+    fetcher
+  )
+
+  // Fetch subscribed users from database
+  const { data: subscribedUsersData, isLoading: subscribedUsersLoading, mutate: mutateSubscribedUsers } = useSWR(
+    "/api/admin/contacts?action=subscribed",
+    fetcher
+  )
+
   // Fetch templates from Resend
   const { data: templatesData, isLoading: templatesLoading, mutate: mutateTemplates } = useSWR(
     "/api/admin/templates",
     fetcher
   )
+
+  // Broadcasts state
+  const [isSendingBroadcast, setIsSendingBroadcast] = useState(false)
+  const [broadcastResult, setBroadcastResult] = useState<{ type: "success" | "error"; text: string } | null>(null)
+  const [broadcastSubject, setBroadcastSubject] = useState("")
+  const [scheduledAt, setScheduledAt] = useState("")
+
+  // Fetch broadcasts from Resend
+  const { data: broadcastsData, isLoading: broadcastsLoading, mutate: mutateBroadcasts } = useSWR(
+    "/api/admin/broadcasts",
+    fetcher
+  )
+
+  interface ResendBroadcast {
+    id: string
+    name?: string
+    status?: string
+    created_at: string
+    sent_at?: string
+    subject?: string
+  }
 
   interface ResendTemplate {
     id: string
@@ -168,6 +228,135 @@ export default function AdminPage() {
   const updateSetting = <K extends keyof BotSettings>(key: K, value: BotSettings[K]) => {
     setLocalSettings(prev => ({ ...prev, [key]: value }))
     setSaveMessage(null) // Clear message when user makes changes
+  }
+
+  // Send newsletter broadcast
+  const handleSendBroadcast = async (sendImmediately: boolean = false) => {
+    setIsSendingBroadcast(true)
+    setBroadcastResult(null)
+
+    try {
+      const response = await fetch("/api/admin/broadcasts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "createAndSend",
+          content: newsletterContent,
+          subject: broadcastSubject || undefined,
+          ...(scheduledAt && !sendImmediately && { scheduledAt }),
+        }),
+      })
+
+      const data = await response.json()
+
+      if (response.ok && data.success) {
+        setBroadcastResult({ type: "success", text: data.message })
+        mutateBroadcasts()
+        setBroadcastSubject("")
+        setScheduledAt("")
+      } else {
+        setBroadcastResult({ type: "error", text: data.error || "Failed to send broadcast" })
+      }
+    } catch (error) {
+      setBroadcastResult({ type: "error", text: "Network error. Please try again." })
+    } finally {
+      setIsSendingBroadcast(false)
+    }
+  }
+
+  // Delete a broadcast
+  const handleDeleteBroadcast = async (broadcastId: string) => {
+    try {
+      const response = await fetch(`/api/admin/broadcasts?broadcastId=${broadcastId}`, {
+        method: "DELETE",
+      })
+      const data = await response.json()
+      if (response.ok && data.success) {
+        mutateBroadcasts()
+      }
+    } catch (error) {
+      console.error("Failed to delete broadcast:", error)
+    }
+  }
+
+  // Sync contacts to Resend
+  const handleSyncContacts = async () => {
+    setIsSyncingContacts(true)
+    setContactsResult(null)
+
+    try {
+      const response = await fetch("/api/admin/contacts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "sync" }),
+      })
+
+      const data = await response.json()
+
+      if (response.ok && data.success) {
+        setContactsResult({ 
+          type: "success", 
+          text: data.message,
+          stats: data.stats 
+        })
+        mutateContacts()
+        mutateSubscribedUsers()
+      } else {
+        setContactsResult({ type: "error", text: data.error || "Failed to sync contacts" })
+      }
+    } catch (error) {
+      setContactsResult({ type: "error", text: "Network error. Please try again." })
+    } finally {
+      setIsSyncingContacts(false)
+    }
+  }
+
+  // Generate HTML preview
+  const handleGeneratePreview = async () => {
+    setIsGeneratingPreview(true)
+    try {
+      const response = await fetch("/api/admin/templates/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: newsletterContent }),
+      })
+      const data = await response.json()
+      if (data.success) {
+        setPreviewHtml(data.html)
+        setShowPreview(true)
+      }
+    } catch (error) {
+      console.error("Failed to generate preview:", error)
+    } finally {
+      setIsGeneratingPreview(false)
+    }
+  }
+
+  // Upload custom newsletter to Resend
+  const handleUploadCustomNewsletter = async () => {
+    setIsUploadingTemplate("custom")
+    setTemplateResult(null)
+
+    try {
+      const response = await fetch("/api/admin/templates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ templateKey: "newsletter", customContent: newsletterContent }),
+      })
+
+      const data = await response.json()
+
+      if (response.ok && data.success) {
+        setTemplateResult({ type: "success", text: `${data.message}` })
+        mutateTemplates()
+      } else {
+        setTemplateResult({ type: "error", text: data.error || "Failed to upload template" })
+      }
+    } catch (error) {
+      setTemplateResult({ type: "error", text: "Network error. Please try again." })
+    } finally {
+      setIsUploadingTemplate(null)
+    }
   }
 
   // Upload template to Resend
@@ -693,14 +882,22 @@ export default function AdminPage() {
         <TabsContent value="notices" className="mt-6 space-y-6">
           {/* Current Newsletter Issue Info */}
           <Card>
-            <CardHeader>
-              <div className="flex items-center gap-2">
-                <Mail className="h-5 w-5 text-primary" />
-                <CardTitle>Newsletter Issue Info</CardTitle>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Mail className="h-5 w-5 text-primary" />
+                  <CardTitle>Newsletter Issue Info</CardTitle>
+                </div>
+                <a 
+                  href="https://resend.com/templates" 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1 text-sm text-muted-foreground hover:text-primary transition-colors"
+                >
+                  Open Resend
+                  <ExternalLink className="h-3 w-3" />
+                </a>
               </div>
-              <CardDescription>
-                Current newsletter metadata for template variables
-              </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="grid gap-4 md:grid-cols-3">
@@ -723,110 +920,661 @@ export default function AdminPage() {
                   </p>
                 </div>
               </div>
-              <p className="mt-4 text-sm text-muted-foreground">
-                Use these values in Resend when editing your templates. Variables: <code className="rounded bg-muted px-1 py-0.5 text-xs">ISSUE_NUMBER</code>, <code className="rounded bg-muted px-1 py-0.5 text-xs">MONTH</code>, <code className="rounded bg-muted px-1 py-0.5 text-xs">YEAR</code>
-              </p>
             </CardContent>
           </Card>
 
-          {/* Quick Actions */}
+          {/* Template Result Message */}
+          {templateResult && (
+            <div className={`flex items-center gap-2 rounded-lg p-4 ${
+              templateResult.type === "success" 
+                ? "bg-green-500/10 border border-green-500/50" 
+                : "bg-destructive/10 border border-destructive/50"
+            }`}>
+              {templateResult.type === "success" ? (
+                <CheckCircle className="h-5 w-5 text-green-500" />
+              ) : (
+                <AlertTriangle className="h-5 w-5 text-destructive" />
+              )}
+              <span className={`text-sm ${
+                templateResult.type === "success" ? "text-green-500" : "text-destructive"
+              }`}>
+                {templateResult.text}
+              </span>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="ml-auto h-6 px-2"
+                onClick={() => setTemplateResult(null)}
+              >
+                Dismiss
+              </Button>
+            </div>
+          )}
+
+          {/* Newsletter Editor */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <Pencil className="h-5 w-5 text-primary" />
+                <CardTitle>Newsletter Editor</CardTitle>
+              </div>
+              <CardDescription>
+                Customize your newsletter content, preview it, then push to Resend
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* Hero Section */}
+              <div className="space-y-4">
+                <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Header</h3>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="heroTitle">Hero Title</Label>
+                    <Input
+                      id="heroTitle"
+                      value={newsletterContent.heroTitle}
+                      onChange={(e) => setNewsletterContent(prev => ({ ...prev, heroTitle: e.target.value }))}
+                      placeholder="NEWSLETTER"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="ctaText">CTA Button Text</Label>
+                    <Input
+                      id="ctaText"
+                      value={newsletterContent.ctaText}
+                      onChange={(e) => setNewsletterContent(prev => ({ ...prev, ctaText: e.target.value }))}
+                      placeholder="Open Dashboard"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="heroSubtitle">Hero Subtitle</Label>
+                  <Textarea
+                    id="heroSubtitle"
+                    value={newsletterContent.heroSubtitle}
+                    onChange={(e) => setNewsletterContent(prev => ({ ...prev, heroSubtitle: e.target.value }))}
+                    placeholder="Quick updates on bots, new features, and what's shipping next."
+                    rows={2}
+                  />
+                </div>
+              </div>
+
+              <Separator />
+
+              {/* Highlights Section */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Highlights</h3>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setNewsletterContent(prev => ({
+                      ...prev,
+                      highlights: [...prev.highlights, ""]
+                    }))}
+                  >
+                    <Plus className="mr-2 h-4 w-4" />
+                    Add Highlight
+                  </Button>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="highlightsIntro">Highlights Intro</Label>
+                  <Input
+                    id="highlightsIntro"
+                    value={newsletterContent.highlightsIntro}
+                    onChange={(e) => setNewsletterContent(prev => ({ ...prev, highlightsIntro: e.target.value }))}
+                    placeholder="A quick look at what happened this month..."
+                  />
+                </div>
+                <div className="space-y-2">
+                  {newsletterContent.highlights.map((highlight, index) => (
+                    <div key={index} className="flex gap-2">
+                      <Input
+                        value={highlight}
+                        onChange={(e) => {
+                          const newHighlights = [...newsletterContent.highlights]
+                          newHighlights[index] = e.target.value
+                          setNewsletterContent(prev => ({ ...prev, highlights: newHighlights }))
+                        }}
+                        placeholder={`Highlight ${index + 1}`}
+                      />
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="shrink-0"
+                        onClick={() => {
+                          const newHighlights = newsletterContent.highlights.filter((_, i) => i !== index)
+                          setNewsletterContent(prev => ({ ...prev, highlights: newHighlights }))
+                        }}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <Separator />
+
+              {/* Features Section */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Features</h3>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setNewsletterContent(prev => ({
+                      ...prev,
+                      features: [...prev.features, { title: "", description: "", linkText: "", linkUrl: "" }]
+                    }))}
+                  >
+                    <Plus className="mr-2 h-4 w-4" />
+                    Add Feature
+                  </Button>
+                </div>
+                {newsletterContent.features.map((feature, index) => (
+                  <Card key={index} className="bg-muted/30">
+                    <CardContent className="pt-4 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-medium">Feature {index + 1}</p>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            const newFeatures = newsletterContent.features.filter((_, i) => i !== index)
+                            setNewsletterContent(prev => ({ ...prev, features: newFeatures }))
+                          }}
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      <div className="grid gap-3 md:grid-cols-2">
+                        <div className="space-y-2">
+                          <Label>Title</Label>
+                          <Input
+                            value={feature.title}
+                            onChange={(e) => {
+                              const newFeatures = [...newsletterContent.features]
+                              newFeatures[index] = { ...feature, title: e.target.value }
+                              setNewsletterContent(prev => ({ ...prev, features: newFeatures }))
+                            }}
+                            placeholder="Feature title"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Link Text</Label>
+                          <Input
+                            value={feature.linkText}
+                            onChange={(e) => {
+                              const newFeatures = [...newsletterContent.features]
+                              newFeatures[index] = { ...feature, linkText: e.target.value }
+                              setNewsletterContent(prev => ({ ...prev, features: newFeatures }))
+                            }}
+                            placeholder="View Dashboard"
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Description</Label>
+                        <Textarea
+                          value={feature.description}
+                          onChange={(e) => {
+                            const newFeatures = [...newsletterContent.features]
+                            newFeatures[index] = { ...feature, description: e.target.value }
+                            setNewsletterContent(prev => ({ ...prev, features: newFeatures }))
+                          }}
+                          placeholder="Feature description"
+                          rows={2}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Link URL</Label>
+                        <Input
+                          value={feature.linkUrl}
+                          onChange={(e) => {
+                            const newFeatures = [...newsletterContent.features]
+                            newFeatures[index] = { ...feature, linkUrl: e.target.value }
+                            setNewsletterContent(prev => ({ ...prev, features: newFeatures }))
+                          }}
+                          placeholder="https://rxsystems.app/dashboard"
+                        />
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+
+              <Separator />
+
+              {/* Action Buttons */}
+              <div className="flex flex-wrap gap-3">
+                <Button
+                  variant="outline"
+                  onClick={handleGeneratePreview}
+                  disabled={isGeneratingPreview}
+                >
+                  {isGeneratingPreview ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Eye className="mr-2 h-4 w-4" />
+                  )}
+                  Preview HTML
+                </Button>
+                <Button
+                  onClick={handleUploadCustomNewsletter}
+                  disabled={isUploadingTemplate !== null}
+                >
+                  {isUploadingTemplate === "custom" ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Upload className="mr-2 h-4 w-4" />
+                  )}
+                  Push to Resend
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* HTML Preview */}
+          {showPreview && previewHtml && (
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Eye className="h-5 w-5 text-primary" />
+                    <CardTitle>Email Preview</CardTitle>
+                  </div>
+                  <Button variant="ghost" size="sm" onClick={() => setShowPreview(false)}>
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="rounded-lg border overflow-hidden">
+                  <iframe
+                    srcDoc={previewHtml}
+                    className="w-full h-[600px] bg-white"
+                    title="Email Preview"
+                  />
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Quick Push Default Templates */}
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center gap-2">
+                <Upload className="h-5 w-5 text-primary" />
+                <CardTitle className="text-base">Quick Push Default Templates</CardTitle>
+              </div>
+              <CardDescription className="text-xs">
+                Push the default templates without customization
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-wrap gap-3">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleUploadTemplate("newsletter")}
+                  disabled={isUploadingTemplate !== null}
+                >
+                  {isUploadingTemplate === "newsletter" ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Mail className="mr-2 h-4 w-4" />
+                  )}
+                  Default Newsletter
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleUploadTemplate("notice")}
+                  disabled={isUploadingTemplate !== null}
+                >
+                  {isUploadingTemplate === "notice" ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <FileText className="mr-2 h-4 w-4" />
+                  )}
+                  Default Notice
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Send Broadcast */}
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Send className="h-5 w-5 text-primary" />
-                  <CardTitle>Quick Actions</CardTitle>
+                  <Radio className="h-5 w-5 text-primary" />
+                  <CardTitle>Send Newsletter</CardTitle>
                 </div>
-                <a 
-                  href="https://resend.com/templates" 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-1 text-sm text-muted-foreground hover:text-primary transition-colors"
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => mutateBroadcasts()}
                 >
-                  Open Resend Dashboard
-                  <ExternalLink className="h-3 w-3" />
-                </a>
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  Refresh
+                </Button>
               </div>
               <CardDescription>
-                Push templates to Resend, then edit them in the Resend dashboard
+                Send your newsletter to all contacts in your Resend audience
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {/* Template Result */}
-              {templateResult && (
+              {/* Broadcast Result */}
+              {broadcastResult && (
                 <div className={`flex items-center gap-2 rounded-lg p-4 ${
-                  templateResult.type === "success" 
+                  broadcastResult.type === "success" 
                     ? "bg-green-500/10 border border-green-500/50" 
                     : "bg-destructive/10 border border-destructive/50"
                 }`}>
-                  {templateResult.type === "success" ? (
+                  {broadcastResult.type === "success" ? (
                     <CheckCircle className="h-5 w-5 text-green-500" />
                   ) : (
                     <AlertTriangle className="h-5 w-5 text-destructive" />
                   )}
                   <span className={`text-sm ${
-                    templateResult.type === "success" ? "text-green-500" : "text-destructive"
+                    broadcastResult.type === "success" ? "text-green-500" : "text-destructive"
                   }`}>
-                    {templateResult.text}
+                    {broadcastResult.text}
                   </span>
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    className="ml-auto h-6 px-2"
+                    onClick={() => setBroadcastResult(null)}
+                  >
+                    Dismiss
+                  </Button>
                 </div>
               )}
 
-              <div className="grid gap-4 md:grid-cols-2">
-                {/* Newsletter Template */}
-                <div className="flex items-center justify-between rounded-lg border p-4">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
-                      <Mail className="h-5 w-5 text-primary" />
-                    </div>
-                    <div>
-                      <p className="font-medium">Newsletter Template</p>
-                      <p className="text-xs text-muted-foreground">Monthly updates email</p>
-                    </div>
-                  </div>
-                  <Button 
-                    size="sm"
-                    onClick={() => handleUploadTemplate("newsletter")}
-                    disabled={isUploadingTemplate !== null}
-                  >
-                    {isUploadingTemplate === "newsletter" ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <>
-                        <Upload className="mr-2 h-4 w-4" />
-                        Push to Resend
-                      </>
-                    )}
-                  </Button>
-                </div>
+              {/* Subject Override */}
+              <div className="space-y-2">
+                <Label htmlFor="broadcastSubject">Subject (Optional Override)</Label>
+                <Input
+                  id="broadcastSubject"
+                  value={broadcastSubject}
+                  onChange={(e) => setBroadcastSubject(e.target.value)}
+                  placeholder="Leave empty to use default: Rx Systems Newsletter — Month Year"
+                />
+              </div>
 
-                {/* Notice Template */}
-                <div className="flex items-center justify-between rounded-lg border p-4">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
-                      <FileText className="h-5 w-5 text-primary" />
-                    </div>
-                    <div>
-                      <p className="font-medium">Notice Template</p>
-                      <p className="text-xs text-muted-foreground">Announcements email</p>
-                    </div>
-                  </div>
-                  <Button 
-                    size="sm"
-                    onClick={() => handleUploadTemplate("notice")}
-                    disabled={isUploadingTemplate !== null}
+              {/* Schedule */}
+              <div className="space-y-2">
+                <Label htmlFor="scheduledAt">Schedule (Optional)</Label>
+                <Input
+                  id="scheduledAt"
+                  type="datetime-local"
+                  value={scheduledAt}
+                  onChange={(e) => setScheduledAt(e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Leave empty to send immediately, or select a date/time to schedule
+                </p>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex flex-wrap gap-3 pt-2">
+                <Button
+                  onClick={() => handleSendBroadcast(true)}
+                  disabled={isSendingBroadcast || (contactsData?.contacts?.data?.length || 0) === 0}
+                >
+                  {isSendingBroadcast ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Send className="mr-2 h-4 w-4" />
+                  )}
+                  Send Now
+                </Button>
+                {scheduledAt && (
+                  <Button
+                    variant="outline"
+                    onClick={() => handleSendBroadcast(false)}
+                    disabled={isSendingBroadcast}
                   >
-                    {isUploadingTemplate === "notice" ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
+                    {isSendingBroadcast ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     ) : (
-                      <>
-                        <Upload className="mr-2 h-4 w-4" />
-                        Push to Resend
-                      </>
+                      <Calendar className="mr-2 h-4 w-4" />
                     )}
+                    Schedule
+                  </Button>
+                )}
+              </div>
+
+              {/* Contact count warning */}
+              {(contactsData?.contacts?.data?.length || 0) === 0 && (
+                <p className="text-sm text-amber-500 flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4" />
+                  No contacts synced. Sync your contacts first before sending.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Recent Broadcasts */}
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center gap-2">
+                <Clock className="h-5 w-5 text-primary" />
+                <CardTitle className="text-base">Recent Broadcasts</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {broadcastsLoading ? (
+                <div className="space-y-2">
+                  {[...Array(3)].map((_, i) => (
+                    <Skeleton key={i} className="h-12 w-full rounded-lg" />
+                  ))}
+                </div>
+              ) : !broadcastsData?.broadcasts?.data?.length ? (
+                <p className="text-sm text-muted-foreground text-center py-4">No broadcasts sent yet</p>
+              ) : (
+                <div className="space-y-2 max-h-64 overflow-y-auto">
+                  {broadcastsData.broadcasts.data.slice(0, 10).map((broadcast: ResendBroadcast) => (
+                    <div 
+                      key={broadcast.id} 
+                      className="flex items-center justify-between rounded-lg border p-3"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">
+                          {broadcast.subject || broadcast.name || "Untitled Broadcast"}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {broadcast.sent_at 
+                            ? `Sent ${new Date(broadcast.sent_at).toLocaleDateString()}`
+                            : `Created ${new Date(broadcast.created_at).toLocaleDateString()}`
+                          }
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Badge variant={broadcast.status === "sent" ? "default" : "secondary"} className="text-xs">
+                          {broadcast.status || "draft"}
+                        </Badge>
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Delete broadcast?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                This will permanently delete this broadcast. This action cannot be undone.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() => handleDeleteBroadcast(broadcast.id)}
+                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                              >
+                                Delete
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Contacts Management */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Users className="h-5 w-5 text-primary" />
+                  <CardTitle>Newsletter Contacts</CardTitle>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => { mutateContacts(); mutateSubscribedUsers(); }}
+                  >
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                    Refresh
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={handleSyncContacts}
+                    disabled={isSyncingContacts}
+                  >
+                    {isSyncingContacts ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <UserPlus className="mr-2 h-4 w-4" />
+                    )}
+                    Sync to Resend
                   </Button>
                 </div>
               </div>
+              <CardDescription>
+                Manage newsletter subscribers. Sync users with "Creator Notices" enabled to Resend.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Contacts Result */}
+              {contactsResult && (
+                <div className={`flex items-start gap-2 rounded-lg p-4 ${
+                  contactsResult.type === "success" 
+                    ? "bg-green-500/10 border border-green-500/50" 
+                    : "bg-destructive/10 border border-destructive/50"
+                }`}>
+                  {contactsResult.type === "success" ? (
+                    <CheckCircle className="h-5 w-5 text-green-500 shrink-0 mt-0.5" />
+                  ) : (
+                    <AlertTriangle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
+                  )}
+                  <div className="flex-1">
+                    <span className={`text-sm ${
+                      contactsResult.type === "success" ? "text-green-500" : "text-destructive"
+                    }`}>
+                      {contactsResult.text}
+                    </span>
+                    {contactsResult.stats && (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/30">
+                          {contactsResult.stats.created} created
+                        </Badge>
+                        <Badge variant="outline" className="bg-blue-500/10 text-blue-500 border-blue-500/30">
+                          {contactsResult.stats.updated} updated
+                        </Badge>
+                        {contactsResult.stats.failed > 0 && (
+                          <Badge variant="outline" className="bg-destructive/10 text-destructive border-destructive/30">
+                            {contactsResult.stats.failed} failed
+                          </Badge>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    className="h-6 px-2 shrink-0"
+                    onClick={() => setContactsResult(null)}
+                  >
+                    Dismiss
+                  </Button>
+                </div>
+              )}
+
+              {/* Stats Grid */}
+              <div className="grid gap-4 md:grid-cols-2">
+                {/* Subscribed Users (Database) */}
+                <div className="rounded-lg border p-4">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium text-muted-foreground">Users with Notices Enabled</p>
+                    <Users className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                  {subscribedUsersLoading ? (
+                    <Skeleton className="mt-2 h-8 w-16" />
+                  ) : (
+                    <p className="mt-2 text-2xl font-bold">
+                      {subscribedUsersData?.count || 0}
+                    </p>
+                  )}
+                  <p className="text-xs text-muted-foreground mt-1">From your database</p>
+                </div>
+
+                {/* Resend Contacts */}
+                <div className="rounded-lg border p-4">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium text-muted-foreground">Resend Contacts</p>
+                    <Mail className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                  {contactsLoading ? (
+                    <Skeleton className="mt-2 h-8 w-16" />
+                  ) : (
+                    <p className="mt-2 text-2xl font-bold">
+                      {contactsData?.contacts?.data?.length || 0}
+                    </p>
+                  )}
+                  <p className="text-xs text-muted-foreground mt-1">Synced to Resend audience</p>
+                </div>
+              </div>
+
+              {/* Subscribed Users List */}
+              {subscribedUsersData?.users?.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">Subscribed Users</p>
+                  <div className="max-h-48 overflow-y-auto rounded-lg border">
+                    {subscribedUsersData.users.slice(0, 20).map((user: { discordId: string; username: string; email?: string }) => (
+                      <div 
+                        key={user.discordId} 
+                        className="flex items-center justify-between border-b last:border-0 px-3 py-2"
+                      >
+                        <div className="flex items-center gap-2">
+                          <div className="h-6 w-6 rounded-full bg-primary/10 flex items-center justify-center">
+                            <span className="text-xs font-medium text-primary">
+                              {user.username?.charAt(0)?.toUpperCase() || "?"}
+                            </span>
+                          </div>
+                          <span className="text-sm">{user.username}</span>
+                        </div>
+                        <span className="text-xs text-muted-foreground truncate max-w-[200px]">
+                          {user.email || "No email"}
+                        </span>
+                      </div>
+                    ))}
+                    {subscribedUsersData.users.length > 20 && (
+                      <div className="px-3 py-2 text-xs text-muted-foreground text-center">
+                        +{subscribedUsersData.users.length - 20} more users
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
