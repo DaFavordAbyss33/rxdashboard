@@ -68,6 +68,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   useEffect(() => {
+    // Clear any old localStorage data from previous mock auth
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("discord_auth")
+      localStorage.removeItem("discord_access_token")
+      localStorage.removeItem("discord_is_admin")
+    }
     fetchSession()
   }, [])
 
