@@ -1,6 +1,7 @@
 "use client"
 
 import React from "react"
+import Link from "next/link"
 import { useAuth } from "@/lib/auth-context"
 import { useRouter } from "next/navigation"
 import { useEffect } from "react"
@@ -50,10 +51,22 @@ export default function HomePage() {
               RX Systems
             </span>
           </div>
-          <Button onClick={login} className="gap-2">
-            <DiscordIcon className="h-4 w-4" />
-            Login with Discord
-          </Button>
+          <nav className="flex items-center gap-2">
+            <Link href="/bots">
+              <Button variant="ghost" size="sm">
+                Our Bots
+              </Button>
+            </Link>
+            <Link href="/pricing">
+              <Button variant="ghost" size="sm">
+                Pricing
+              </Button>
+            </Link>
+            <Button onClick={login} className="gap-2">
+              <DiscordIcon className="h-4 w-4" />
+              Login with Discord
+            </Button>
+          </nav>
         </div>
       </header>
 
@@ -76,9 +89,11 @@ export default function HomePage() {
               <DiscordIcon className="h-5 w-5" />
               Get Started
             </Button>
-            <Button size="lg" variant="outline">
-              View Documentation
-            </Button>
+            <Link href="/bots">
+              <Button size="lg" variant="outline">
+                Explore Our Bots
+              </Button>
+            </Link>
           </div>
         </div>
 
