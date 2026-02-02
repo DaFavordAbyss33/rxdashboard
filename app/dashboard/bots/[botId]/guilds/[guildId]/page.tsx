@@ -1,14 +1,10 @@
 "use client"
 
-import { use, useState } from "react"
+import { use, useState, useEffect } from "react"
 import { notFound } from "next/navigation"
 import Link from "next/link"
+import useSWR from "swr"
 import { useAuth } from "@/lib/auth-context"
-import {
-  getBotById,
-  getConfigForBotGuild,
-  isGuildInstalled,
-} from "@/lib/data"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -16,6 +12,7 @@ import { Switch } from "@/components/ui/switch"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
+import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
 import {
   ArrowLeft,
@@ -30,8 +27,24 @@ import {
   X,
   Save,
   RefreshCw,
+  AlertTriangle,
 } from "lucide-react"
 import { toast } from "sonner"
+
+const fetcher = (url: string) => fetch(url).then((res) => res.json())
+
+interface Bot {
+  id: string
+  name: string
+  description: string
+  capabilities: {
+    channels?: string[]
+    keys?: string[]
+    features?: string[]
+    premium?: boolean
+  }
+  isPrivate?: boolean
+}
 
 interface GuildConfigPageProps {
   params: Promise<{ botId: string; guildId: string }>
@@ -39,34 +52,74 @@ interface GuildConfigPageProps {
 
 export default function GuildConfigPage({ params }: GuildConfigPageProps) {
   const { botId, guildId } = use(params)
-  const { managableGuilds } = useAuth()
+  const { managableGuilds, user } = useAuth()
   const [isSaving, setIsSaving] = useState(false)
+  const [config, setConfig] = useState<Record<string, unknown>>({})
 
-  const bot = getBotById(botId)
+  // Fetch bot data
+  const { data: botsData, isLoading: botsLoading } = useSWR("/api/bots", fetcher)
+  
+  // Fetch config for this bot+guild
+  const { 
+    data: configData, 
+    isLoading: configLoading,
+    mutate: refreshConfig,
+  } = useSWR(
+    `/api/bots/${botId}/config?guildId=${guildId}`,
+    fetcher
+  )
+
+  const bot = botsData?.bots?.find((b: Bot) => b.id === botId) as Bot | undefined
   const guild = managableGuilds.find((g) => g.id === guildId)
+
+  // Initialize config from API response
+  useEffect(() => {
+    if (configData?.config) {
+      setConfig(configData.config)
+    }
+  }, [configData])
+
+  // Loading state
+  if (botsLoading || configLoading) {
+    return (
+      <div className="space-y-6">
+        <Skeleton className="h-6 w-32" />
+        <Skeleton className="h-40 w-full" />
+        <Skeleton className="h-96 w-full" />
+      </div>
+    )
+  }
 
   if (!bot || !guild) {
     notFound()
   }
 
-  // Check if bot is installed in this guild
-  if (!isGuildInstalled(botId, guildId)) {
-    notFound()
-  }
-
-  const existingConfig = getConfigForBotGuild(botId, guildId)
-
-  // Form state
-  const [config, setConfig] = useState<Record<string, unknown>>(
-    existingConfig?.config ?? {}
-  )
-
   const handleSave = async () => {
     setIsSaving(true)
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1000))
-    setIsSaving(false)
-    toast.success("Configuration saved successfully")
+    try {
+      const response = await fetch(`/api/bots/${botId}/config`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          guildId,
+          config,
+          updatedBy: user?.username || "unknown",
+        }),
+      })
+
+      const data = await response.json()
+
+      if (response.ok && data.success) {
+        toast.success("Configuration saved! Bot will sync automatically.")
+        refreshConfig()
+      } else {
+        toast.error(data.error || "Failed to save configuration")
+      }
+    } catch (error) {
+      toast.error("Network error. Please try again.")
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   const handleToggleFeature = (feature: string) => {
@@ -105,6 +158,9 @@ export default function GuildConfigPage({ params }: GuildConfigPageProps) {
 
   const completedSteps = setupChecklist.filter((s) => s.done).length
   const totalSteps = setupChecklist.length
+
+  // Check if database is configured
+  const isDbConfigured = configData?.configured !== false
 
   return (
     <div className="space-y-6">
@@ -177,6 +233,19 @@ export default function GuildConfigPage({ params }: GuildConfigPageProps) {
           </div>
         </div>
       </div>
+
+      {/* Database Not Configured Warning */}
+      {!isDbConfigured && (
+        <div className="flex items-center gap-4 rounded-lg border border-amber-500/50 bg-amber-500/10 p-4">
+          <AlertTriangle className="h-6 w-6 text-amber-500" />
+          <div>
+            <p className="font-medium text-amber-500">Database Not Configured</p>
+            <p className="text-sm text-muted-foreground">
+              Configuration cannot be saved. MongoDB is not configured for this bot.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Configuration Tabs */}
       <div className="rounded-lg border border-border bg-card">
@@ -432,8 +501,13 @@ export default function GuildConfigPage({ params }: GuildConfigPageProps) {
         </Tabs>
 
         {/* Save Button */}
-        <div className="flex justify-end border-t border-border p-6">
-          <Button onClick={handleSave} disabled={isSaving}>
+        <div className="flex items-center justify-between border-t border-border p-6">
+          <div className="text-sm text-muted-foreground">
+            {configData?.updatedAt && (
+              <>Last saved: {new Date(configData.updatedAt).toLocaleString()}</>
+            )}
+          </div>
+          <Button onClick={handleSave} disabled={isSaving || !isDbConfigured}>
             {isSaving ? (
               <>
                 <RefreshCw className="mr-2 h-4 w-4 animate-spin" />

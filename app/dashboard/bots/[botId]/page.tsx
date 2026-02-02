@@ -1,19 +1,16 @@
 "use client"
 
-import { use } from "react"
+import { use, useState, useMemo } from "react"
 import { notFound } from "next/navigation"
 import Link from "next/link"
+import useSWR from "swr"
 import { useAuth } from "@/lib/auth-context"
-import {
-  getBotById,
-  getInstallationsForBot,
-  isGuildInstalled,
-  generateInviteUrl,
-} from "@/lib/data"
+import { generateBotInviteUrl } from "@/lib/invite"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
 import {
   ArrowLeft,
@@ -26,8 +23,39 @@ import {
   Settings,
   Crown,
   Lock,
+  RefreshCw,
 } from "lucide-react"
-import { useState } from "react"
+
+const fetcher = (url: string) => fetch(url).then((res) => res.json())
+
+interface Bot {
+  id: string
+  name: string
+  description: string
+  icon: string
+  clientId: string
+  inviteScopes: string[]
+  permissionsInt: string
+  capabilities: {
+    channels?: string[]
+    keys?: string[]
+    features?: string[]
+    premium?: boolean
+  }
+  status: "online" | "offline" | "degraded"
+  guildsCount: number
+  wsPing: number
+  uptime: string
+  hasSubscription?: boolean
+  isPrivate?: boolean
+}
+
+interface BotGuild {
+  id: string
+  name: string
+  icon: string | null
+  iconUrl: string | null
+}
 
 interface BotDetailPageProps {
   params: Promise<{ botId: string }>
@@ -38,20 +66,31 @@ export default function BotDetailPage({ params }: BotDetailPageProps) {
   const { managableGuilds } = useAuth()
   const [searchQuery, setSearchQuery] = useState("")
 
-  const bot = getBotById(botId)
-  if (!bot) {
-    notFound()
-  }
-
-  const installations = getInstallationsForBot(botId)
-
-  // Separate guilds into installed and not installed
-  const installedGuilds = managableGuilds.filter((guild) =>
-    isGuildInstalled(botId, guild.id)
+  // Fetch bot data from API
+  const { data: botsData, error: botsError, isLoading: botsLoading } = useSWR(
+    "/api/bots",
+    fetcher,
+    { refreshInterval: 30000 }
   )
-  const notInstalledGuilds = managableGuilds.filter(
-    (guild) => !isGuildInstalled(botId, guild.id)
+
+  // Fetch guilds the bot is installed in
+  const { data: guildsData, error: guildsError, isLoading: guildsLoading, mutate: refreshGuilds } = useSWR(
+    `/api/bots/${botId}/guilds`,
+    fetcher,
+    { refreshInterval: 60000 }
   )
+
+  const bot = botsData?.bots?.find((b: Bot) => b.id === botId) as Bot | undefined
+  const installedGuildIds = new Set(
+    (guildsData?.guilds || []).map((g: BotGuild) => g.id)
+  )
+
+  // Separate user's manageable guilds into installed and not installed
+  const { installedGuilds, notInstalledGuilds } = useMemo(() => {
+    const installed = managableGuilds.filter((guild) => installedGuildIds.has(guild.id))
+    const notInstalled = managableGuilds.filter((guild) => !installedGuildIds.has(guild.id))
+    return { installedGuilds: installed, notInstalledGuilds: notInstalled }
+  }, [managableGuilds, installedGuildIds])
 
   // Filter by search
   const filterGuilds = (guilds: typeof managableGuilds) =>
@@ -63,6 +102,23 @@ export default function BotDetailPage({ params }: BotDetailPageProps) {
     online: "bg-online",
     offline: "bg-offline",
     degraded: "bg-degraded",
+  }
+
+  // Loading state
+  if (botsLoading) {
+    return (
+      <div className="space-y-6">
+        <Skeleton className="h-6 w-32" />
+        <Skeleton className="h-40 w-full" />
+        <Skeleton className="h-24 w-full" />
+        <Skeleton className="h-96 w-full" />
+      </div>
+    )
+  }
+
+  // Bot not found
+  if (!bot || botsError) {
+    notFound()
   }
 
   return (
@@ -183,33 +239,47 @@ export default function BotDetailPage({ params }: BotDetailPageProps) {
 
         {/* Tabs for Installed / Not Installed */}
         <Tabs defaultValue="installed" className="p-6">
-          <TabsList className="mb-4">
-            <TabsTrigger value="installed">
-              Installed ({installedGuilds.length})
-            </TabsTrigger>
-            {!bot.isPrivate && (
-              <TabsTrigger value="not-installed">
-                Not Installed ({notInstalledGuilds.length})
+          <div className="mb-4 flex items-center justify-between">
+            <TabsList>
+              <TabsTrigger value="installed">
+                Installed ({guildsLoading ? "..." : installedGuilds.length})
               </TabsTrigger>
-            )}
-          </TabsList>
+              {!bot.isPrivate && (
+                <TabsTrigger value="not-installed">
+                  Not Installed ({notInstalledGuilds.length})
+                </TabsTrigger>
+              )}
+            </TabsList>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => refreshGuilds()}
+              className="gap-2"
+            >
+              <RefreshCw className="h-4 w-4" />
+              Refresh
+            </Button>
+          </div>
 
           <TabsContent value="installed" className="mt-0">
-            <div className="space-y-2">
-              {filterGuilds(installedGuilds).length === 0 ? (
-                <div className="rounded-lg border border-dashed border-border bg-secondary/30 p-8 text-center">
-                  <p className="text-muted-foreground">
-                    {searchQuery
-                      ? "No installed guilds match your search"
-                      : "No guilds have this bot installed yet"}
-                  </p>
-                </div>
-              ) : (
-                filterGuilds(installedGuilds).map((guild) => {
-                  const installation = installations.find(
-                    (i) => i.guildId === guild.id
-                  )
-                  return (
+            {guildsLoading ? (
+              <div className="space-y-2">
+                <Skeleton className="h-16 w-full" />
+                <Skeleton className="h-16 w-full" />
+                <Skeleton className="h-16 w-full" />
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {filterGuilds(installedGuilds).length === 0 ? (
+                  <div className="rounded-lg border border-dashed border-border bg-secondary/30 p-8 text-center">
+                    <p className="text-muted-foreground">
+                      {searchQuery
+                        ? "No installed guilds match your search"
+                        : "No guilds have this bot installed yet"}
+                    </p>
+                  </div>
+                ) : (
+                  filterGuilds(installedGuilds).map((guild) => (
                     <GuildRow
                       key={guild.id}
                       guildId={guild.id}
@@ -217,13 +287,12 @@ export default function BotDetailPage({ params }: BotDetailPageProps) {
                       memberCount={guild.memberCount}
                       isOwner={guild.owner}
                       isInstalled
-                      premiumStatus={installation?.premiumStatus}
                       botId={botId}
                     />
-                  )
-                })
-              )}
-            </div>
+                  ))
+                )}
+              </div>
+            )}
           </TabsContent>
 
           {!bot.isPrivate && (
@@ -247,7 +316,7 @@ export default function BotDetailPage({ params }: BotDetailPageProps) {
                       isOwner={guild.owner}
                       isInstalled={false}
                       botId={botId}
-                      inviteUrl={generateInviteUrl(bot, guild.id)}
+                      inviteUrl={generateBotInviteUrl(bot, guild.id) || undefined}
                     />
                   ))
                 )}
@@ -266,7 +335,6 @@ interface GuildRowProps {
   memberCount: number
   isOwner: boolean
   isInstalled: boolean
-  premiumStatus?: "active" | "inactive" | "trial"
   botId: string
   inviteUrl?: string
 }
@@ -277,16 +345,9 @@ function GuildRow({
   memberCount,
   isOwner,
   isInstalled,
-  premiumStatus,
   botId,
   inviteUrl,
 }: GuildRowProps) {
-  const premiumBadge = {
-    active: { label: "Premium", className: "bg-primary/20 text-primary" },
-    trial: { label: "Trial", className: "bg-degraded/20 text-degraded" },
-    inactive: null,
-  }
-
   return (
     <div className="flex items-center justify-between rounded-lg border border-border bg-secondary/30 p-4 transition-colors hover:bg-secondary/50">
       <div className="flex items-center gap-4">
@@ -299,11 +360,6 @@ function GuildRow({
             {isOwner && (
               <Badge variant="outline" className="text-xs">
                 Owner
-              </Badge>
-            )}
-            {premiumStatus && premiumBadge[premiumStatus] && (
-              <Badge className={cn("text-xs", premiumBadge[premiumStatus]?.className)}>
-                {premiumBadge[premiumStatus]?.label}
               </Badge>
             )}
           </div>
