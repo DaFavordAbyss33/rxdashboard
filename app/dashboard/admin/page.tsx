@@ -48,6 +48,9 @@ import {
   X,
   Users,
   UserPlus,
+  Calendar,
+  Radio,
+  Clock,
 } from "lucide-react"
 import {
   DropdownMenu,
@@ -140,6 +143,27 @@ export default function AdminPage() {
     fetcher
   )
 
+  // Broadcasts state
+  const [isSendingBroadcast, setIsSendingBroadcast] = useState(false)
+  const [broadcastResult, setBroadcastResult] = useState<{ type: "success" | "error"; text: string } | null>(null)
+  const [broadcastSubject, setBroadcastSubject] = useState("")
+  const [scheduledAt, setScheduledAt] = useState("")
+
+  // Fetch broadcasts from Resend
+  const { data: broadcastsData, isLoading: broadcastsLoading, mutate: mutateBroadcasts } = useSWR(
+    "/api/admin/broadcasts",
+    fetcher
+  )
+
+  interface ResendBroadcast {
+    id: string
+    name?: string
+    status?: string
+    created_at: string
+    sent_at?: string
+    subject?: string
+  }
+
   interface ResendTemplate {
     id: string
     name: string
@@ -204,6 +228,55 @@ export default function AdminPage() {
   const updateSetting = <K extends keyof BotSettings>(key: K, value: BotSettings[K]) => {
     setLocalSettings(prev => ({ ...prev, [key]: value }))
     setSaveMessage(null) // Clear message when user makes changes
+  }
+
+  // Send newsletter broadcast
+  const handleSendBroadcast = async (sendImmediately: boolean = false) => {
+    setIsSendingBroadcast(true)
+    setBroadcastResult(null)
+
+    try {
+      const response = await fetch("/api/admin/broadcasts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "createAndSend",
+          content: newsletterContent,
+          subject: broadcastSubject || undefined,
+          ...(scheduledAt && !sendImmediately && { scheduledAt }),
+        }),
+      })
+
+      const data = await response.json()
+
+      if (response.ok && data.success) {
+        setBroadcastResult({ type: "success", text: data.message })
+        mutateBroadcasts()
+        setBroadcastSubject("")
+        setScheduledAt("")
+      } else {
+        setBroadcastResult({ type: "error", text: data.error || "Failed to send broadcast" })
+      }
+    } catch (error) {
+      setBroadcastResult({ type: "error", text: "Network error. Please try again." })
+    } finally {
+      setIsSendingBroadcast(false)
+    }
+  }
+
+  // Delete a broadcast
+  const handleDeleteBroadcast = async (broadcastId: string) => {
+    try {
+      const response = await fetch(`/api/admin/broadcasts?broadcastId=${broadcastId}`, {
+        method: "DELETE",
+      })
+      const data = await response.json()
+      if (response.ok && data.success) {
+        mutateBroadcasts()
+      }
+    } catch (error) {
+      console.error("Failed to delete broadcast:", error)
+    }
   }
 
   // Sync contacts to Resend
@@ -1167,6 +1240,191 @@ export default function AdminPage() {
                   Default Notice
                 </Button>
               </div>
+            </CardContent>
+          </Card>
+
+          {/* Send Broadcast */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Radio className="h-5 w-5 text-primary" />
+                  <CardTitle>Send Newsletter</CardTitle>
+                </div>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => mutateBroadcasts()}
+                >
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  Refresh
+                </Button>
+              </div>
+              <CardDescription>
+                Send your newsletter to all contacts in your Resend audience
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Broadcast Result */}
+              {broadcastResult && (
+                <div className={`flex items-center gap-2 rounded-lg p-4 ${
+                  broadcastResult.type === "success" 
+                    ? "bg-green-500/10 border border-green-500/50" 
+                    : "bg-destructive/10 border border-destructive/50"
+                }`}>
+                  {broadcastResult.type === "success" ? (
+                    <CheckCircle className="h-5 w-5 text-green-500" />
+                  ) : (
+                    <AlertTriangle className="h-5 w-5 text-destructive" />
+                  )}
+                  <span className={`text-sm ${
+                    broadcastResult.type === "success" ? "text-green-500" : "text-destructive"
+                  }`}>
+                    {broadcastResult.text}
+                  </span>
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    className="ml-auto h-6 px-2"
+                    onClick={() => setBroadcastResult(null)}
+                  >
+                    Dismiss
+                  </Button>
+                </div>
+              )}
+
+              {/* Subject Override */}
+              <div className="space-y-2">
+                <Label htmlFor="broadcastSubject">Subject (Optional Override)</Label>
+                <Input
+                  id="broadcastSubject"
+                  value={broadcastSubject}
+                  onChange={(e) => setBroadcastSubject(e.target.value)}
+                  placeholder="Leave empty to use default: Rx Systems Newsletter — Month Year"
+                />
+              </div>
+
+              {/* Schedule */}
+              <div className="space-y-2">
+                <Label htmlFor="scheduledAt">Schedule (Optional)</Label>
+                <Input
+                  id="scheduledAt"
+                  type="datetime-local"
+                  value={scheduledAt}
+                  onChange={(e) => setScheduledAt(e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Leave empty to send immediately, or select a date/time to schedule
+                </p>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex flex-wrap gap-3 pt-2">
+                <Button
+                  onClick={() => handleSendBroadcast(true)}
+                  disabled={isSendingBroadcast || (contactsData?.contacts?.data?.length || 0) === 0}
+                >
+                  {isSendingBroadcast ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Send className="mr-2 h-4 w-4" />
+                  )}
+                  Send Now
+                </Button>
+                {scheduledAt && (
+                  <Button
+                    variant="outline"
+                    onClick={() => handleSendBroadcast(false)}
+                    disabled={isSendingBroadcast}
+                  >
+                    {isSendingBroadcast ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Calendar className="mr-2 h-4 w-4" />
+                    )}
+                    Schedule
+                  </Button>
+                )}
+              </div>
+
+              {/* Contact count warning */}
+              {(contactsData?.contacts?.data?.length || 0) === 0 && (
+                <p className="text-sm text-amber-500 flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4" />
+                  No contacts synced. Sync your contacts first before sending.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Recent Broadcasts */}
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center gap-2">
+                <Clock className="h-5 w-5 text-primary" />
+                <CardTitle className="text-base">Recent Broadcasts</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {broadcastsLoading ? (
+                <div className="space-y-2">
+                  {[...Array(3)].map((_, i) => (
+                    <Skeleton key={i} className="h-12 w-full rounded-lg" />
+                  ))}
+                </div>
+              ) : !broadcastsData?.broadcasts?.data?.length ? (
+                <p className="text-sm text-muted-foreground text-center py-4">No broadcasts sent yet</p>
+              ) : (
+                <div className="space-y-2 max-h-64 overflow-y-auto">
+                  {broadcastsData.broadcasts.data.slice(0, 10).map((broadcast: ResendBroadcast) => (
+                    <div 
+                      key={broadcast.id} 
+                      className="flex items-center justify-between rounded-lg border p-3"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">
+                          {broadcast.subject || broadcast.name || "Untitled Broadcast"}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {broadcast.sent_at 
+                            ? `Sent ${new Date(broadcast.sent_at).toLocaleDateString()}`
+                            : `Created ${new Date(broadcast.created_at).toLocaleDateString()}`
+                          }
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Badge variant={broadcast.status === "sent" ? "default" : "secondary"} className="text-xs">
+                          {broadcast.status || "draft"}
+                        </Badge>
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Delete broadcast?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                This will permanently delete this broadcast. This action cannot be undone.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() => handleDeleteBroadcast(broadcast.id)}
+                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                              >
+                                Delete
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
 
