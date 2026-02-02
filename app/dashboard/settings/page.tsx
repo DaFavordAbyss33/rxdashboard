@@ -126,18 +126,6 @@ export default function SettingsPage() {
         </div>
         <Separator className="my-4" />
         <div className="space-y-4">
-          <div>
-            <Label className="mb-2 block text-sm font-medium">
-              Master User IDs
-            </Label>
-            <Input
-              placeholder="Enter Discord user IDs (comma separated)"
-              defaultValue={user?.id}
-            />
-            <p className="mt-1 text-xs text-muted-foreground">
-              Users who can manage all bots regardless of guild permissions
-            </p>
-          </div>
           <div className="flex items-center justify-between">
             <div>
               <Label className="text-sm font-medium">

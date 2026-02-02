@@ -1,6 +1,6 @@
 import { MongoClient, Db } from "mongodb"
 
-// v4: Completely rewritten MongoDB client with graceful error handling
+// v5: GRACEFUL ERROR HANDLING - Returns null, NEVER throws for missing config
 // Bot database configuration - check if env vars exist before using
 export const BOT_DATABASES = {
   syruprx: {
