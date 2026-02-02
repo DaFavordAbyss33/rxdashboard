@@ -23,7 +23,7 @@ export async function GET(request: Request) {
     }
 
     // Simple API key validation (bot should send a secret key)
-    const expectedKey = process.env[`BOT_API_KEY_${botId.toUpperCase().replace("-", "_")}`]
+    const expectedKey = process.env[`BOT_API_KEY_${botId.toUpperCase().replace(/-/g, "_")}`]
     if (expectedKey && apiKey !== expectedKey) {
       return NextResponse.json(
         { success: false, error: "Unauthorized" },
@@ -75,7 +75,7 @@ export async function POST(request: Request) {
     }
 
     // Simple API key validation
-    const expectedKey = process.env[`BOT_API_KEY_${botId.toUpperCase().replace("-", "_")}`]
+    const expectedKey = process.env[`BOT_API_KEY_${botId.toUpperCase().replace(/-/g, "_")}`]
     if (expectedKey && apiKey !== expectedKey) {
       return NextResponse.json(
         { success: false, error: "Unauthorized" },
