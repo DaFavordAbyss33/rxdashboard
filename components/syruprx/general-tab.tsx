@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useCallback } from "react"
 import useSWR from "swr"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -110,13 +110,21 @@ export function SyrupRxGeneralTab({ guildId }: SyrupRxGeneralTabProps) {
     displayName: string
     headshot: string | null
   }>>({})
+  const [loadedIds, setLoadedIds] = useState<Set<number>>(new Set())
 
   // Load Roblox user data (usernames + headshots)
-  const loadRobloxUsers = async (userIds: number[]) => {
+  const loadRobloxUsers = useCallback(async (userIds: number[]) => {
     if (userIds.length === 0) return
     
-    const missingIds = userIds.filter(id => !robloxUsers[id])
+    const missingIds = userIds.filter(id => !loadedIds.has(id))
     if (missingIds.length === 0) return
+
+    // Mark as loading to prevent duplicate requests
+    setLoadedIds(prev => {
+      const next = new Set(prev)
+      missingIds.forEach(id => next.add(id))
+      return next
+    })
 
     try {
       const response = await fetch(`/api/roblox/users?ids=${missingIds.join(",")}`)
@@ -128,18 +136,37 @@ export function SyrupRxGeneralTab({ guildId }: SyrupRxGeneralTabProps) {
     } catch (error) {
       console.error("Failed to load Roblox users:", error)
     }
-  }
+  }, [loadedIds])
 
   // Load user data when lists change
-  if (bansData?.success && bansData.data?.data?.Bans) {
-    loadRobloxUsers(bansData.data.data.Bans)
-  }
-  if (playersData?.success && playersData.data?.data?.Players) {
-    loadRobloxUsers(playersData.data.data.Players)
-  }
-  if (queueData?.success && queueData.data?.data?.Queue) {
-    loadRobloxUsers(queueData.data.data.Queue)
-  }
+  useEffect(() => {
+    const allIds: number[] = []
+    
+    if (bansData?.success && bansData.data?.data?.Bans) {
+      allIds.push(...bansData.data.data.Bans)
+    }
+    if (playersData?.success && playersData.data?.data?.Players) {
+      allIds.push(...playersData.data.data.Players)
+    }
+    if (queueData?.success && queueData.data?.data?.Queue) {
+      allIds.push(...queueData.data.data.Queue)
+    }
+    
+    // Also load owner and admin IDs if available
+    if (serverInfoData?.success && serverInfoData.data?.data?.Owner) {
+      allIds.push(serverInfoData.data.data.Owner)
+    }
+    if (serverInfoData?.success && serverInfoData.data?.data?.Admins) {
+      allIds.push(...serverInfoData.data.data.Admins)
+    }
+    if (serverInfoData?.success && serverInfoData.data?.data?.HeadAdmins) {
+      allIds.push(...serverInfoData.data.data.HeadAdmins)
+    }
+    
+    if (allIds.length > 0) {
+      loadRobloxUsers(allIds)
+    }
+  }, [bansData, playersData, queueData, serverInfoData, loadRobloxUsers])
 
   const executeAction = async (action: string, params: Record<string, unknown>) => {
     setIsExecuting(action)
@@ -156,7 +183,7 @@ export function SyrupRxGeneralTab({ guildId }: SyrupRxGeneralTabProps) {
         toast.success(data.message || `${action} executed successfully`)
         
         // Refresh relevant data
-        if (action === "kick" || action === "ban") {
+        if (action === "kick" || action === "ban" || action === "unban") {
           refreshPlayers()
           refreshBans()
         } else if (action === "settings" || action === "banner") {
@@ -259,8 +286,17 @@ export function SyrupRxGeneralTab({ guildId }: SyrupRxGeneralTabProps) {
                   <span className="font-medium">{serverInfo.ServerName || "N/A"}</span>
                 </div>
                 <div>
-                  <span className="text-muted-foreground">Owner ID:</span>{" "}
-                  <span className="font-mono">{serverInfo.Owner || "N/A"}</span>
+                  <span className="text-muted-foreground">Owner:</span>{" "}
+                  {serverInfo.Owner ? (
+                    <span className="font-medium">
+                      {robloxUsers[serverInfo.Owner]?.displayName || robloxUsers[serverInfo.Owner]?.name || `User ${serverInfo.Owner}`}
+                      {robloxUsers[serverInfo.Owner]?.name && robloxUsers[serverInfo.Owner]?.displayName !== robloxUsers[serverInfo.Owner]?.name && (
+                        <span className="text-muted-foreground text-xs ml-1">(@{robloxUsers[serverInfo.Owner].name})</span>
+                      )}
+                    </span>
+                  ) : (
+                    <span className="font-mono">N/A</span>
+                  )}
                 </div>
                 <div>
                   <span className="text-muted-foreground">Players:</span>{" "}
@@ -281,7 +317,14 @@ export function SyrupRxGeneralTab({ guildId }: SyrupRxGeneralTabProps) {
                 {serverInfo.Admins && serverInfo.Admins.length > 0 && (
                   <div className="col-span-2">
                     <span className="text-muted-foreground">Admins:</span>{" "}
-                    <span className="font-mono text-xs">{serverInfo.Admins.join(", ")}</span>
+                    <span className="text-sm">
+                      {serverInfo.Admins.map((adminId, index) => (
+                        <span key={adminId}>
+                          {index > 0 && ", "}
+                          {robloxUsers[adminId]?.displayName || robloxUsers[adminId]?.name || `User ${adminId}`}
+                        </span>
+                      ))}
+                    </span>
                   </div>
                 )}
               </div>
@@ -678,10 +721,10 @@ export function SyrupRxGeneralTab({ guildId }: SyrupRxGeneralTabProps) {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => executeAction("ban", { userId: userId.toString(), banned: false })}
-                      disabled={isExecuting === "ban"}
+                      onClick={() => executeAction("unban", { userId: userId.toString() })}
+                      disabled={isExecuting === "unban"}
                     >
-                      {isExecuting === "ban" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                      {isExecuting === "unban" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                       Revoke Ban
                     </Button>
                   </div>
