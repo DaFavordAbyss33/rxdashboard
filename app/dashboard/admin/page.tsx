@@ -38,7 +38,19 @@ import {
   Send,
   FileText,
   Upload,
+  Copy,
+  Eye,
+  Pencil,
+  ExternalLink,
+  MoreHorizontal,
 } from "lucide-react"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useRouter } from "next/navigation"
 
@@ -91,6 +103,20 @@ export default function AdminPage() {
   // Template state
   const [isUploadingTemplate, setIsUploadingTemplate] = useState<string | null>(null)
   const [templateResult, setTemplateResult] = useState<{ type: "success" | "error"; text: string } | null>(null)
+  const [templateAction, setTemplateAction] = useState<{ id: string; action: string } | null>(null)
+
+  // Fetch templates from Resend
+  const { data: templatesData, isLoading: templatesLoading, mutate: mutateTemplates } = useSWR(
+    "/api/admin/templates",
+    fetcher
+  )
+
+  interface ResendTemplate {
+    id: string
+    name: string
+    created_at: string
+    status?: string
+  }
 
   const { data: guildsData, error: guildsError, isLoading: guildsLoading } = useSWR(
     "/api/admin/guilds",
@@ -166,7 +192,8 @@ export default function AdminPage() {
       const data = await response.json()
 
       if (response.ok && data.success) {
-        setTemplateResult({ type: "success", text: `${data.message}. Template ID: ${data.templateId}` })
+        setTemplateResult({ type: "success", text: `${data.message}` })
+        mutateTemplates()
       } else {
         setTemplateResult({ type: "error", text: data.error || "Failed to upload template" })
       }
@@ -174,6 +201,85 @@ export default function AdminPage() {
       setTemplateResult({ type: "error", text: "Network error. Please try again." })
     } finally {
       setIsUploadingTemplate(null)
+    }
+  }
+
+  // Duplicate a template
+  const handleDuplicateTemplate = async (templateId: string) => {
+    setTemplateAction({ id: templateId, action: "duplicate" })
+    setTemplateResult(null)
+
+    try {
+      const response = await fetch("/api/admin/templates", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ templateId }),
+      })
+
+      const data = await response.json()
+
+      if (response.ok && data.success) {
+        setTemplateResult({ type: "success", text: `Template duplicated! New ID: ${data.templateId}` })
+        mutateTemplates()
+      } else {
+        setTemplateResult({ type: "error", text: data.error || "Failed to duplicate template" })
+      }
+    } catch (error) {
+      setTemplateResult({ type: "error", text: "Network error. Please try again." })
+    } finally {
+      setTemplateAction(null)
+    }
+  }
+
+  // Publish a template
+  const handlePublishTemplate = async (templateId: string) => {
+    setTemplateAction({ id: templateId, action: "publish" })
+    setTemplateResult(null)
+
+    try {
+      const response = await fetch("/api/admin/templates", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ templateId, publish: true }),
+      })
+
+      const data = await response.json()
+
+      if (response.ok && data.success) {
+        setTemplateResult({ type: "success", text: "Template published successfully!" })
+        mutateTemplates()
+      } else {
+        setTemplateResult({ type: "error", text: data.error || "Failed to publish template" })
+      }
+    } catch (error) {
+      setTemplateResult({ type: "error", text: "Network error. Please try again." })
+    } finally {
+      setTemplateAction(null)
+    }
+  }
+
+  // Delete a template
+  const handleDeleteTemplate = async (templateId: string) => {
+    setTemplateAction({ id: templateId, action: "delete" })
+    setTemplateResult(null)
+
+    try {
+      const response = await fetch(`/api/admin/templates?templateId=${templateId}`, {
+        method: "DELETE",
+      })
+
+      const data = await response.json()
+
+      if (response.ok && data.success) {
+        setTemplateResult({ type: "success", text: "Template deleted successfully!" })
+        mutateTemplates()
+      } else {
+        setTemplateResult({ type: "error", text: data.error || "Failed to delete template" })
+      }
+    } catch (error) {
+      setTemplateResult({ type: "error", text: "Network error. Please try again." })
+    } finally {
+      setTemplateAction(null)
     }
   }
 
@@ -729,122 +835,250 @@ export default function AdminPage() {
 
         {/* Templates Tab */}
         <TabsContent value="templates" className="mt-6 space-y-6">
+          {/* Template Result Message */}
+          {templateResult && (
+            <div className={`flex items-center gap-2 rounded-lg p-4 ${
+              templateResult.type === "success" 
+                ? "bg-green-500/10 border border-green-500/50" 
+                : "bg-destructive/10 border border-destructive/50"
+            }`}>
+              {templateResult.type === "success" ? (
+                <CheckCircle className="h-5 w-5 text-green-500" />
+              ) : (
+                <AlertTriangle className="h-5 w-5 text-destructive" />
+              )}
+              <span className={`text-sm ${
+                templateResult.type === "success" ? "text-green-500" : "text-destructive"
+              }`}>
+                {templateResult.text}
+              </span>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="ml-auto h-6 px-2"
+                onClick={() => setTemplateResult(null)}
+              >
+                Dismiss
+              </Button>
+            </div>
+          )}
+
+          {/* Create New Templates */}
           <Card>
             <CardHeader>
-              <div className="flex items-center gap-2">
-                <FileText className="h-5 w-5 text-primary" />
-                <CardTitle>Email Templates</CardTitle>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Upload className="h-5 w-5 text-primary" />
+                  <CardTitle>Create Template</CardTitle>
+                </div>
+                <a 
+                  href="https://resend.com/templates" 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1 text-sm text-muted-foreground hover:text-primary transition-colors"
+                >
+                  Open Resend
+                  <ExternalLink className="h-3 w-3" />
+                </a>
               </div>
               <CardDescription>
-                Upload email templates to Resend for editing in their visual editor.
-                Once uploaded, you can edit them at{" "}
-                <a href="https://resend.com/templates" target="_blank" rel="noopener noreferrer" className="text-primary underline">
-                  resend.com/templates
-                </a>
+                Upload pre-built templates to Resend. Edit them visually in Resend&apos;s dashboard.
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-6">
-              {/* Template Result */}
-              {templateResult && (
-                <div className={`flex items-center gap-2 rounded-lg p-4 ${
-                  templateResult.type === "success" 
-                    ? "bg-green-500/10 border border-green-500/50" 
-                    : "bg-destructive/10 border border-destructive/50"
-                }`}>
-                  {templateResult.type === "success" ? (
-                    <CheckCircle className="h-5 w-5 text-green-500" />
-                  ) : (
-                    <AlertTriangle className="h-5 w-5 text-destructive" />
-                  )}
-                  <span className={`text-sm ${
-                    templateResult.type === "success" ? "text-green-500" : "text-destructive"
-                  }`}>
-                    {templateResult.text}
-                  </span>
-                </div>
-              )}
-
+            <CardContent>
               <div className="grid gap-4 md:grid-cols-2">
                 {/* Newsletter Template */}
-                <Card>
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-base flex items-center gap-2">
-                      <Mail className="h-4 w-4" />
-                      Newsletter Template
-                    </CardTitle>
-                    <CardDescription className="text-xs">
-                      Monthly newsletter with highlights and features
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-3">
-                      <div className="text-xs text-muted-foreground">
-                        <p className="font-medium mb-1">Variables:</p>
-                        <code className="text-[10px] block bg-muted p-2 rounded">
-                          HERO_TITLE, HIGHLIGHT_1-4, FEATURE_1/2_TITLE, FEATURE_1/2_DESC, CTA_TEXT, CTA_URL
-                        </code>
-                      </div>
-                      <Button 
-                        className="w-full gap-2" 
-                        onClick={() => handleUploadTemplate("newsletter")}
-                        disabled={isUploadingTemplate !== null}
-                      >
-                        {isUploadingTemplate === "newsletter" ? (
-                          <>
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                            Uploading...
-                          </>
-                        ) : (
-                          <>
-                            <Upload className="h-4 w-4" />
-                            Upload to Resend
-                          </>
-                        )}
-                      </Button>
+                <div className="flex items-center justify-between rounded-lg border p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
+                      <Mail className="h-5 w-5 text-primary" />
                     </div>
-                  </CardContent>
-                </Card>
+                    <div>
+                      <p className="font-medium">Newsletter</p>
+                      <p className="text-xs text-muted-foreground">Monthly updates template</p>
+                    </div>
+                  </div>
+                  <Button 
+                    size="sm"
+                    onClick={() => handleUploadTemplate("newsletter")}
+                    disabled={isUploadingTemplate !== null}
+                  >
+                    {isUploadingTemplate === "newsletter" ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      "Create"
+                    )}
+                  </Button>
+                </div>
 
                 {/* Notice Template */}
-                <Card>
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-base flex items-center gap-2">
-                      <Send className="h-4 w-4" />
-                      Notice Template
-                    </CardTitle>
-                    <CardDescription className="text-xs">
-                      Simple notice/announcement emails
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-3">
-                      <div className="text-xs text-muted-foreground">
-                        <p className="font-medium mb-1">Variables:</p>
-                        <code className="text-[10px] block bg-muted p-2 rounded">
-                          SUBJECT, USERNAME, MESSAGE
-                        </code>
-                      </div>
-                      <Button 
-                        className="w-full gap-2" 
-                        onClick={() => handleUploadTemplate("notice")}
-                        disabled={isUploadingTemplate !== null}
-                      >
-                        {isUploadingTemplate === "notice" ? (
-                          <>
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                            Uploading...
-                          </>
-                        ) : (
-                          <>
-                            <Upload className="h-4 w-4" />
-                            Upload to Resend
-                          </>
-                        )}
-                      </Button>
+                <div className="flex items-center justify-between rounded-lg border p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
+                      <Send className="h-5 w-5 text-primary" />
                     </div>
-                  </CardContent>
-                </Card>
+                    <div>
+                      <p className="font-medium">Notice</p>
+                      <p className="text-xs text-muted-foreground">Announcements template</p>
+                    </div>
+                  </div>
+                  <Button 
+                    size="sm"
+                    onClick={() => handleUploadTemplate("notice")}
+                    disabled={isUploadingTemplate !== null}
+                  >
+                    {isUploadingTemplate === "notice" ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      "Create"
+                    )}
+                  </Button>
+                </div>
               </div>
+            </CardContent>
+          </Card>
+
+          {/* Existing Templates */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <FileText className="h-5 w-5 text-primary" />
+                  <CardTitle>Your Templates</CardTitle>
+                </div>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => mutateTemplates()}
+                  className="gap-2"
+                >
+                  <RefreshCw className="h-4 w-4" />
+                  Refresh
+                </Button>
+              </div>
+              <CardDescription>
+                Manage your email templates in Resend. Duplicate, publish, or delete as needed.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {templatesLoading ? (
+                <div className="space-y-3">
+                  {[...Array(3)].map((_, i) => (
+                    <Skeleton key={i} className="h-16 w-full rounded-lg" />
+                  ))}
+                </div>
+              ) : !templatesData?.templates?.data?.length ? (
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                  <FileText className="h-12 w-12 text-muted-foreground/50" />
+                  <p className="mt-4 text-muted-foreground">No templates found</p>
+                  <p className="text-sm text-muted-foreground">Create a template above to get started</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {templatesData.templates.data.map((template: ResendTemplate) => (
+                    <div 
+                      key={template.id} 
+                      className="flex items-center justify-between rounded-lg border p-4 transition-colors hover:bg-muted/50"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
+                          <FileText className="h-5 w-5 text-muted-foreground" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <p className="font-medium">{template.name}</p>
+                            {template.status && (
+                              <Badge variant={template.status === "published" ? "default" : "secondary"} className="text-[10px]">
+                                {template.status}
+                              </Badge>
+                            )}
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            Created {new Date(template.created_at).toLocaleDateString()}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-1"
+                          onClick={() => window.open(`https://resend.com/templates/${template.id}`, "_blank")}
+                        >
+                          <Pencil className="h-3 w-3" />
+                          Edit
+                        </Button>
+
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                              {templateAction?.id === template.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <MoreHorizontal className="h-4 w-4" />
+                              )}
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem 
+                              onClick={() => window.open(`https://resend.com/templates/${template.id}`, "_blank")}
+                              className="gap-2"
+                            >
+                              <Eye className="h-4 w-4" />
+                              View in Resend
+                            </DropdownMenuItem>
+                            <DropdownMenuItem 
+                              onClick={() => handleDuplicateTemplate(template.id)}
+                              className="gap-2"
+                            >
+                              <Copy className="h-4 w-4" />
+                              Duplicate
+                            </DropdownMenuItem>
+                            <DropdownMenuItem 
+                              onClick={() => handlePublishTemplate(template.id)}
+                              className="gap-2"
+                            >
+                              <CheckCircle className="h-4 w-4" />
+                              Publish
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <DropdownMenuItem 
+                                  className="gap-2 text-destructive focus:text-destructive"
+                                  onSelect={(e) => e.preventDefault()}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                  Delete
+                                </DropdownMenuItem>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>Delete template?</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    This will permanently delete <strong>{template.name}</strong>. 
+                                    This action cannot be undone.
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                  <AlertDialogAction
+                                    onClick={() => handleDeleteTemplate(template.id)}
+                                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                  >
+                                    Delete
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
