@@ -29,7 +29,7 @@ export interface Guild {
   id: string
   name: string
   icon: string | null
-  memberCount: number
+  memberCount?: number
   owner: boolean
   permissions: string
 }

@@ -332,7 +332,7 @@ export default function BotDetailPage({ params }: BotDetailPageProps) {
 interface GuildRowProps {
   guildId: string
   guildName: string
-  memberCount: number
+  memberCount?: number
   isOwner: boolean
   isInstalled: boolean
   botId: string
@@ -364,7 +364,7 @@ function GuildRow({
             )}
           </div>
           <p className="text-sm text-muted-foreground">
-            {memberCount.toLocaleString()} members
+            {memberCount ? `${memberCount.toLocaleString()} members` : "Discord Server"}
           </p>
         </div>
       </div>
