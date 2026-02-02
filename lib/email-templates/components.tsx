@@ -49,11 +49,19 @@ export interface CTAButtonProps {
 }
 
 // ============ NEWSLETTER DATA STRUCTURE ============
+export interface NewsletterImage {
+  url: string
+  alt?: string
+  width?: number
+  linkUrl?: string
+}
+
 export interface NewsletterContent {
   // Header
   previewText?: string
   heroTitle?: string
   heroSubtitle?: string
+  heroImage?: NewsletterImage
   
   // Highlights section
   highlightsIntro?: string
@@ -65,7 +73,11 @@ export interface NewsletterContent {
     description: string
     linkUrl?: string
     linkText?: string
+    image?: NewsletterImage
   }>
+  
+  // Standalone images
+  images?: NewsletterImage[]
   
   // Custom sections
   sections?: Array<{
@@ -120,17 +132,49 @@ export function generateBulletList(items: string[]): string {
   `).join("")
 }
 
+// Helper to generate image block
+export function generateImageBlock(image: NewsletterImage): string {
+  const imgHtml = `<img src="${image.url}" alt="${image.alt || ""}" width="${image.width || 560}" style="display:block;max-width:100%;height:auto;border-radius:12px" />`
+  
+  if (image.linkUrl) {
+    return `
+      <tr>
+        <td align="center" style="padding:16px 0">
+          <a href="${image.linkUrl}" style="display:block">
+            ${imgHtml}
+          </a>
+        </td>
+      </tr>
+    `
+  }
+  
+  return `
+    <tr>
+      <td align="center" style="padding:16px 0">
+        ${imgHtml}
+      </td>
+    </tr>
+  `
+}
+
 // Helper to generate feature card
-export function generateFeatureCard(feature: FeatureRowProps): string {
+export function generateFeatureCard(feature: FeatureRowProps & { image?: NewsletterImage }): string {
   const link = feature.linkUrl ? `
     <a href="${feature.linkUrl}" style="display:inline-block;margin-top:12px;padding:10px 18px;background:linear-gradient(90deg, #7C4DFF 0%, #FF8A3D 100%);border-radius:8px;color:#ffffff;font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:700;text-decoration:none">
       ${feature.linkText || "Learn More"}
     </a>
   ` : ""
   
+  const imageHtml = feature.image ? `
+    <div style="margin-bottom:12px">
+      <img src="${feature.image.url}" alt="${feature.image.alt || ""}" width="${feature.image.width || 520}" style="display:block;max-width:100%;height:auto;border-radius:8px" />
+    </div>
+  ` : ""
+  
   return `
     <tr style="margin:0;padding:0">
       <td style="margin:0;padding:18px 22px;background:#12121a;border-radius:14px;border:1px solid rgba(255,255,255,0.08)">
+        ${imageHtml}
         <div style="color:#ffffff;font-family:Arial,Helvetica,sans-serif;font-size:18px;font-weight:700">${feature.title}</div>
         <div style="margin-top:8px;color:rgba(255,255,255,0.75);font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:22px">${feature.description}</div>
         ${link}
