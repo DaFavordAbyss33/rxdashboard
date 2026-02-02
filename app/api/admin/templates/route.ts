@@ -95,7 +95,7 @@ export async function GET() {
   }
 }
 
-// POST - Create or update a template
+// POST - Create a template
 export async function POST(request: Request) {
   try {
     const body = await request.json()
@@ -119,13 +119,13 @@ export async function POST(request: Request) {
 
     // Optionally publish it
     if (publish && result.data?.id) {
-      await resend.templates.update(result.data.id, { name: template.name })
+      await resend.templates.publish(result.data.id)
     }
 
     return NextResponse.json({
       success: true,
       templateId: result.data?.id,
-      message: `Template '${template.name}' created successfully`,
+      message: `Template '${template.name}' created${publish ? " and published" : ""} successfully`,
     })
   } catch (error: unknown) {
     console.error("[templates] Error creating template:", error)
@@ -134,13 +134,86 @@ export async function POST(request: Request) {
     const errorMessage = error instanceof Error ? error.message : "Unknown error"
     if (errorMessage.includes("already exists")) {
       return NextResponse.json(
-        { success: false, error: "Template already exists. Delete it in Resend dashboard first to recreate." },
+        { success: false, error: "Template already exists. Delete it first or use PUT to update." },
         { status: 409 }
       )
     }
 
     return NextResponse.json(
       { success: false, error: "Failed to create template" },
+      { status: 500 }
+    )
+  }
+}
+
+// PUT - Update an existing template
+export async function PUT(request: Request) {
+  try {
+    const body = await request.json()
+    const { templateId, templateKey, publish = true } = body as { 
+      templateId: string
+      templateKey?: keyof typeof TEMPLATES
+      publish?: boolean 
+    }
+
+    if (!templateId) {
+      return NextResponse.json(
+        { success: false, error: "templateId is required" },
+        { status: 400 }
+      )
+    }
+
+    // If templateKey provided, use predefined template
+    if (templateKey && TEMPLATES[templateKey]) {
+      const template = TEMPLATES[templateKey]
+      await resend.templates.update(templateId, {
+        name: template.name,
+        html: template.html,
+      })
+    }
+
+    // Publish if requested
+    if (publish) {
+      await resend.templates.publish(templateId)
+    }
+
+    return NextResponse.json({
+      success: true,
+      templateId,
+      message: `Template updated${publish ? " and published" : ""} successfully`,
+    })
+  } catch (error) {
+    console.error("[templates] Error updating template:", error)
+    return NextResponse.json(
+      { success: false, error: "Failed to update template" },
+      { status: 500 }
+    )
+  }
+}
+
+// DELETE - Remove a template
+export async function DELETE(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url)
+    const templateId = searchParams.get("templateId")
+
+    if (!templateId) {
+      return NextResponse.json(
+        { success: false, error: "templateId query parameter is required" },
+        { status: 400 }
+      )
+    }
+
+    await resend.templates.remove(templateId)
+
+    return NextResponse.json({
+      success: true,
+      message: "Template deleted successfully",
+    })
+  } catch (error) {
+    console.error("[templates] Error deleting template:", error)
+    return NextResponse.json(
+      { success: false, error: "Failed to delete template" },
       { status: 500 }
     )
   }
