@@ -81,15 +81,31 @@ const TEMPLATES = {
   },
 }
 
-// GET - List all templates
-export async function GET() {
+// GET - List all templates or get a single template
+export async function GET(request: Request) {
   try {
-    const templates = await resend.templates.list()
+    const { searchParams } = new URL(request.url)
+    const templateId = searchParams.get("templateId")
+    const limit = searchParams.get("limit")
+    const after = searchParams.get("after")
+
+    // Get single template by ID
+    if (templateId) {
+      const template = await resend.templates.get(templateId)
+      return NextResponse.json({ success: true, template: template.data })
+    }
+
+    // List templates with optional pagination
+    const listOptions: { limit?: number; after?: string } = {}
+    if (limit) listOptions.limit = parseInt(limit, 10)
+    if (after) listOptions.after = after
+
+    const templates = await resend.templates.list(listOptions)
     return NextResponse.json({ success: true, templates: templates.data })
   } catch (error) {
-    console.error("[templates] Error listing templates:", error)
+    console.error("[templates] Error fetching templates:", error)
     return NextResponse.json(
-      { success: false, error: "Failed to list templates" },
+      { success: false, error: "Failed to fetch templates" },
       { status: 500 }
     )
   }
@@ -186,6 +202,35 @@ export async function PUT(request: Request) {
     console.error("[templates] Error updating template:", error)
     return NextResponse.json(
       { success: false, error: "Failed to update template" },
+      { status: 500 }
+    )
+  }
+}
+
+// PATCH - Duplicate a template
+export async function PATCH(request: Request) {
+  try {
+    const body = await request.json()
+    const { templateId } = body as { templateId: string }
+
+    if (!templateId) {
+      return NextResponse.json(
+        { success: false, error: "templateId is required" },
+        { status: 400 }
+      )
+    }
+
+    const result = await resend.templates.duplicate(templateId)
+
+    return NextResponse.json({
+      success: true,
+      templateId: result.data?.id,
+      message: "Template duplicated successfully",
+    })
+  } catch (error) {
+    console.error("[templates] Error duplicating template:", error)
+    return NextResponse.json(
+      { success: false, error: "Failed to duplicate template" },
       { status: 500 }
     )
   }
