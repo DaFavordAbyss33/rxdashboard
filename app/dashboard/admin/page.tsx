@@ -36,6 +36,8 @@ import {
   Loader2,
   Mail,
   Send,
+  FileText,
+  Upload,
 } from "lucide-react"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useRouter } from "next/navigation"
@@ -85,6 +87,10 @@ export default function AdminPage() {
   const [noticeMessage, setNoticeMessage] = useState("")
   const [isSendingNotice, setIsSendingNotice] = useState(false)
   const [noticeResult, setNoticeResult] = useState<{ type: "success" | "error"; text: string } | null>(null)
+  
+  // Template state
+  const [isUploadingTemplate, setIsUploadingTemplate] = useState<string | null>(null)
+  const [templateResult, setTemplateResult] = useState<{ type: "success" | "error"; text: string } | null>(null)
 
   const { data: guildsData, error: guildsError, isLoading: guildsLoading } = useSWR(
     "/api/admin/guilds",
@@ -143,6 +149,32 @@ export default function AdminPage() {
   const updateSetting = <K extends keyof BotSettings>(key: K, value: BotSettings[K]) => {
     setLocalSettings(prev => ({ ...prev, [key]: value }))
     setSaveMessage(null) // Clear message when user makes changes
+  }
+
+  // Upload template to Resend
+  const handleUploadTemplate = async (templateKey: "newsletter" | "notice") => {
+    setIsUploadingTemplate(templateKey)
+    setTemplateResult(null)
+
+    try {
+      const response = await fetch("/api/admin/templates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ templateKey }),
+      })
+
+      const data = await response.json()
+
+      if (response.ok && data.success) {
+        setTemplateResult({ type: "success", text: `${data.message}. Template ID: ${data.templateId}` })
+      } else {
+        setTemplateResult({ type: "error", text: data.error || "Failed to upload template" })
+      }
+    } catch (error) {
+      setTemplateResult({ type: "error", text: "Network error. Please try again." })
+    } finally {
+      setIsUploadingTemplate(null)
+    }
   }
 
   // Send notice/email to all users
@@ -272,7 +304,7 @@ export default function AdminPage() {
       </div>
 
       <Tabs defaultValue="servers" className="w-full">
-        <TabsList className="grid w-full max-w-lg grid-cols-3">
+        <TabsList className="grid w-full max-w-2xl grid-cols-4">
           <TabsTrigger value="servers" className="gap-2">
             <Server className="h-4 w-4" />
             Servers
@@ -284,6 +316,10 @@ export default function AdminPage() {
           <TabsTrigger value="notices" className="gap-2">
             <Mail className="h-4 w-4" />
             Notices
+          </TabsTrigger>
+          <TabsTrigger value="templates" className="gap-2">
+            <FileText className="h-4 w-4" />
+            Templates
           </TabsTrigger>
         </TabsList>
 
@@ -686,6 +722,128 @@ export default function AdminPage() {
               <div className="flex flex-col items-center justify-center py-8 text-center">
                 <Mail className="h-12 w-12 text-muted-foreground/50" />
                 <p className="mt-4 text-muted-foreground">No notices sent yet</p>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Templates Tab */}
+        <TabsContent value="templates" className="mt-6 space-y-6">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <FileText className="h-5 w-5 text-primary" />
+                <CardTitle>Email Templates</CardTitle>
+              </div>
+              <CardDescription>
+                Upload email templates to Resend for editing in their visual editor.
+                Once uploaded, you can edit them at{" "}
+                <a href="https://resend.com/templates" target="_blank" rel="noopener noreferrer" className="text-primary underline">
+                  resend.com/templates
+                </a>
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* Template Result */}
+              {templateResult && (
+                <div className={`flex items-center gap-2 rounded-lg p-4 ${
+                  templateResult.type === "success" 
+                    ? "bg-green-500/10 border border-green-500/50" 
+                    : "bg-destructive/10 border border-destructive/50"
+                }`}>
+                  {templateResult.type === "success" ? (
+                    <CheckCircle className="h-5 w-5 text-green-500" />
+                  ) : (
+                    <AlertTriangle className="h-5 w-5 text-destructive" />
+                  )}
+                  <span className={`text-sm ${
+                    templateResult.type === "success" ? "text-green-500" : "text-destructive"
+                  }`}>
+                    {templateResult.text}
+                  </span>
+                </div>
+              )}
+
+              <div className="grid gap-4 md:grid-cols-2">
+                {/* Newsletter Template */}
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <Mail className="h-4 w-4" />
+                      Newsletter Template
+                    </CardTitle>
+                    <CardDescription className="text-xs">
+                      Monthly newsletter with highlights and features
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-3">
+                      <div className="text-xs text-muted-foreground">
+                        <p className="font-medium mb-1">Variables:</p>
+                        <code className="text-[10px] block bg-muted p-2 rounded">
+                          HERO_TITLE, HIGHLIGHT_1-4, FEATURE_1/2_TITLE, FEATURE_1/2_DESC, CTA_TEXT, CTA_URL
+                        </code>
+                      </div>
+                      <Button 
+                        className="w-full gap-2" 
+                        onClick={() => handleUploadTemplate("newsletter")}
+                        disabled={isUploadingTemplate !== null}
+                      >
+                        {isUploadingTemplate === "newsletter" ? (
+                          <>
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            Uploading...
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="h-4 w-4" />
+                            Upload to Resend
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Notice Template */}
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <Send className="h-4 w-4" />
+                      Notice Template
+                    </CardTitle>
+                    <CardDescription className="text-xs">
+                      Simple notice/announcement emails
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-3">
+                      <div className="text-xs text-muted-foreground">
+                        <p className="font-medium mb-1">Variables:</p>
+                        <code className="text-[10px] block bg-muted p-2 rounded">
+                          SUBJECT, USERNAME, MESSAGE
+                        </code>
+                      </div>
+                      <Button 
+                        className="w-full gap-2" 
+                        onClick={() => handleUploadTemplate("notice")}
+                        disabled={isUploadingTemplate !== null}
+                      >
+                        {isUploadingTemplate === "notice" ? (
+                          <>
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            Uploading...
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="h-4 w-4" />
+                            Upload to Resend
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
               </div>
             </CardContent>
           </Card>
