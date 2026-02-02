@@ -10,6 +10,7 @@ interface SessionGuild {
   icon: string | null
   owner: boolean
   permissions: string
+  memberRoles?: string[]
 }
 
 interface AuthContextType {

@@ -32,6 +32,7 @@ export interface Guild {
   memberCount?: number
   owner: boolean
   permissions: string
+  memberRoles?: string[]
 }
 
 export interface Installation {
