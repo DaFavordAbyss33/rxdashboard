@@ -51,6 +51,7 @@ import {
   Info,
 } from "lucide-react"
 import { toast } from "sonner"
+import { SyrupRxGeneralTab } from "@/components/syruprx/general-tab"
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json())
 
@@ -279,16 +280,27 @@ export default function GuildConfigPage({ params }: GuildConfigPageProps) {
 
       {/* Configuration Tabs */}
       <div className="rounded-lg border border-border bg-card">
-        <Tabs defaultValue="general" className="w-full">
+        <Tabs defaultValue={botId === "syruprx" ? "syruprx-general" : "general"} className="w-full">
           <div className="border-b border-border px-6">
             <TabsList className="h-auto rounded-none border-b-0 bg-transparent p-0">
-              <TabsTrigger
-                value="general"
-                className="rounded-none border-b-2 border-transparent px-4 py-3 data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none"
-              >
-                <Settings className="mr-2 h-4 w-4" />
-                General
-              </TabsTrigger>
+              {botId !== "syruprx" && (
+                <TabsTrigger
+                  value="general"
+                  className="rounded-none border-b-2 border-transparent px-4 py-3 data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none"
+                >
+                  <Settings className="mr-2 h-4 w-4" />
+                  General
+                </TabsTrigger>
+              )}
+              {botId === "syruprx" && (
+                <TabsTrigger
+                  value="syruprx-general"
+                  className="rounded-none border-b-2 border-transparent px-4 py-3 data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none"
+                >
+                  <Server className="mr-2 h-4 w-4" />
+                  General
+                </TabsTrigger>
+              )}
               {botId === "syruprx" && (
                 <TabsTrigger
                   value="setup"
@@ -307,7 +319,7 @@ export default function GuildConfigPage({ params }: GuildConfigPageProps) {
                   Commands
                 </TabsTrigger>
               )}
-              {bot.capabilities.channels && bot.capabilities.channels.length > 0 && (
+              {botId !== "syruprx" && bot.capabilities.channels && bot.capabilities.channels.length > 0 && (
                 <TabsTrigger
                   value="channels"
                   className="rounded-none border-b-2 border-transparent px-4 py-3 data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none"
@@ -316,7 +328,7 @@ export default function GuildConfigPage({ params }: GuildConfigPageProps) {
                   Channels
                 </TabsTrigger>
               )}
-              {bot.capabilities.keys && bot.capabilities.keys.length > 0 && (
+              {botId !== "syruprx" && bot.capabilities.keys && bot.capabilities.keys.length > 0 && (
                 <TabsTrigger
                   value="api-keys"
                   className="rounded-none border-b-2 border-transparent px-4 py-3 data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none"
@@ -325,7 +337,7 @@ export default function GuildConfigPage({ params }: GuildConfigPageProps) {
                   API Keys
                 </TabsTrigger>
               )}
-              {bot.capabilities.features && bot.capabilities.features.length > 0 && (
+              {botId !== "syruprx" && bot.capabilities.features && bot.capabilities.features.length > 0 && (
                 <TabsTrigger
                   value="features"
                   className="rounded-none border-b-2 border-transparent px-4 py-3 data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none"
@@ -334,7 +346,7 @@ export default function GuildConfigPage({ params }: GuildConfigPageProps) {
                   Features
                 </TabsTrigger>
               )}
-              {bot.capabilities.premium && (
+              {botId !== "syruprx" && bot.capabilities.premium && (
                 <TabsTrigger
                   value="premium"
                   className="rounded-none border-b-2 border-transparent px-4 py-3 data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none"
@@ -391,6 +403,13 @@ export default function GuildConfigPage({ params }: GuildConfigPageProps) {
               </div>
             </div>
           </TabsContent>
+
+          {/* SyrupRx General Tab */}
+          {botId === "syruprx" && (
+            <TabsContent value="syruprx-general" className="p-6">
+              <SyrupRxGeneralTab guildId={guildId} />
+            </TabsContent>
+          )}
 
           {/* Setup Tab (SyrupRx specific - Marizma Configuration) */}
           {botId === "syruprx" && (
