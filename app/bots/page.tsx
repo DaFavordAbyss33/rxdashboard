@@ -2,79 +2,76 @@
 
 import Image from "next/image"
 import Link from "next/link"
+import useSWR from "swr"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { ArrowLeft, ExternalLink, Lock, Sparkles, Server, Clock, FileText, Activity } from "lucide-react"
+import { Skeleton } from "@/components/ui/skeleton"
+import { ArrowLeft, ExternalLink, Lock, Sparkles, Server, Clock, FileText, Activity, RefreshCw, Wifi, WifiOff } from "lucide-react"
 
-const publicBots = [
-  {
-    id: "syruprx",
-    name: "SyrupRx",
-    description: "The ultimate utility and staff management bot for Maple Hospital servers. Track shifts, manage roles, and keep your staff organized.",
-    icon: "/bots/syruprx.png",
+// Static metadata for each bot that doesn't change
+const BOT_METADATA: Record<string, {
+  color: string
+  features: string[]
+  free: boolean
+  hasPremium: boolean
+  priceFrom?: string
+  featureIcon: typeof Server
+  longDescription: string
+}> = {
+  syruprx: {
     color: "from-rx-purple to-rx-orange",
     features: ["Shift Tracking", "Role Sync", "Staff Management", "Moderation Logs"],
-    stats: { guilds: "180+", uptime: "99.9%" },
     free: true,
     hasPremium: false,
     featureIcon: Server,
+    longDescription: "The ultimate utility and staff management bot for Maple Hospital servers. Track shifts, manage roles, and keep your staff organized.",
   },
-  {
-    id: "syruprx-pro",
-    name: "SyrupRx PRO",
-    description: "Premium features and advanced analytics for power users. Custom branding, detailed reports, and priority support.",
-    icon: "/bots/syruprx-pro.png",
+  "syruprx-pro": {
     color: "from-rx-purple to-rx-orange",
     features: ["Advanced Analytics", "Custom Branding", "Priority Support", "Unlimited Commands"],
-    stats: { guilds: "150+", uptime: "99.9%" },
     free: false,
     hasPremium: true,
     priceFrom: "$7.99",
     featureIcon: Sparkles,
+    longDescription: "Premium features and advanced analytics for power users. Custom branding, detailed reports, and priority support.",
   },
-  {
-    id: "autoclockrx",
-    name: "AutoclockRx",
-    description: "Automatic shift logging with MarizmaAPI integration. Export payroll data, monitor activity, and manage schedules effortlessly.",
-    icon: "/bots/autoclockrx.png",
+  autoclockrx: {
     color: "from-blue-500 to-cyan-500",
     features: ["Auto Clock-In/Out", "Payroll Export", "Activity Monitor", "Shift Schedules"],
-    stats: { guilds: "65+", uptime: "99.5%" },
     free: false,
     hasPremium: true,
     priceFrom: "$10.39",
     featureIcon: Clock,
+    longDescription: "Automatic shift logging with MarizmaAPI integration. Export payroll data, monitor activity, and manage schedules effortlessly.",
   },
-  {
-    id: "mednoterx",
-    name: "MedNoteRx",
-    description: "Discord-native patient charting and medical documentation. Perfect for healthcare roleplay communities and training servers.",
-    icon: "/bots/mednoterx.png",
+  mednoterx: {
     color: "from-emerald-500 to-teal-500",
     features: ["Patient Charting", "Medical Templates", "Export to PDF", "Multi-Department"],
-    stats: { guilds: "20+", uptime: "99.5%" },
     free: false,
     hasPremium: true,
     priceFrom: "$11.99",
     featureIcon: FileText,
+    longDescription: "Discord-native patient charting and medical documentation. Perfect for healthcare roleplay communities and training servers.",
   },
-  {
-    id: "swissrx",
-    name: "SwissRx",
-    description: "LOA management and session scheduling system. Track leaves of absence and organize training sessions with ease.",
-    icon: "/bots/swissrx.png",
+  swissrx: {
     color: "from-red-500 to-rose-500",
     features: ["LOA Management", "Session Calendar", "Staff Tracking", "Google Sheets Sync"],
-    stats: { guilds: "Private", uptime: "99.9%" },
     free: true,
     hasPremium: false,
-    isPrivate: true,
     featureIcon: Activity,
+    longDescription: "LOA management and session scheduling system. Track leaves of absence and organize training sessions with ease.",
   },
-]
+}
+
+const fetcher = (url: string) => fetch(url).then((res) => res.json())
 
 export default function BotsPage() {
+  const { data, error, isLoading, mutate } = useSWR("/api/bots/public", fetcher, {
+    refreshInterval: 60000, // Refresh every minute for public page
+  })
+
+  const bots = data?.bots || []
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
@@ -123,105 +120,156 @@ export default function BotsPage() {
           </p>
         </div>
 
+        {/* Loading State */}
+        {isLoading && (
+          <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
+            {[...Array(5)].map((_, i) => (
+              <Skeleton key={i} className="h-96 rounded-lg" />
+            ))}
+          </div>
+        )}
+
+        {/* Error State - Show static data */}
+        {error && (
+          <div className="mb-8 flex items-center justify-center gap-2 rounded-lg border border-yellow-500/50 bg-yellow-500/10 p-4 text-sm text-yellow-600">
+            <WifiOff className="h-4 w-4" />
+            Unable to fetch live data. Showing cached information.
+          </div>
+        )}
+
         {/* Bot Cards */}
-        <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
-          {publicBots.map((bot) => (
-            <Card key={bot.id} className="group flex flex-col border-border bg-card transition-all hover:border-rx-purple/50">
-              <CardHeader>
-                <div className="flex items-start justify-between">
-                  <div className={`rounded-xl bg-gradient-to-br ${bot.color} p-0.5`}>
-                    <div className="rounded-[10px] bg-background p-2">
-                      <Image
-                        src={bot.icon}
-                        alt={bot.name}
-                        width={48}
-                        height={48}
-                        className="rounded-lg"
-                      />
-                    </div>
-                  </div>
-                  <div className="flex gap-2">
-                    {bot.isPrivate && (
-                      <Badge variant="secondary" className="gap-1">
-                        <Lock className="h-3 w-3" />
-                        Private
-                      </Badge>
-                    )}
-                    {bot.free && !bot.isPrivate && (
-                      <Badge variant="secondary" className="bg-success/20 text-success">
-                        Free
-                      </Badge>
-                    )}
-                    {bot.hasPremium && (
-                      <Badge className="gap-1 bg-gradient-to-r from-rx-purple to-rx-orange text-primary-foreground">
-                        <Sparkles className="h-3 w-3" />
-                        Premium
-                      </Badge>
-                    )}
-                  </div>
-                </div>
-                <CardTitle className="mt-4 text-xl text-card-foreground">{bot.name}</CardTitle>
-                <CardDescription className="text-sm">{bot.description}</CardDescription>
-              </CardHeader>
-              
-              <CardContent className="flex-1">
-                <div className="mb-4 flex items-center gap-4 text-sm text-muted-foreground">
-                  <span className="flex items-center gap-1">
-                    <Server className="h-4 w-4" />
-                    {bot.stats.guilds} servers
-                  </span>
-                  <span>{bot.stats.uptime} uptime</span>
-                </div>
-                
-                <div className="space-y-2">
-                  <p className="text-xs font-medium uppercase text-muted-foreground">Features</p>
-                  <div className="flex flex-wrap gap-2">
-                    {bot.features.map((feature) => (
-                      <Badge key={feature} variant="outline" className="text-xs">
-                        {feature}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-              </CardContent>
-              
-              <CardFooter className="flex flex-col gap-3 border-t border-border pt-4">
-                {bot.hasPremium && (
-                  <p className="text-sm text-muted-foreground">
-                    From <span className="font-semibold text-foreground">{bot.priceFrom}</span>/month
-                  </p>
-                )}
-                <div className="flex w-full gap-2">
-                  {bot.isPrivate ? (
-                    <Button disabled className="flex-1" variant="outline">
-                      Private Bot
-                    </Button>
-                  ) : (
-                    <>
-                      <Button className="flex-1 gap-2" variant="outline" asChild>
-                        <a
-                          href={`https://discord.com/oauth2/authorize?client_id=placeholder&scope=bot+applications.commands&permissions=8`}
-                          target="_blank"
-                          rel="noopener noreferrer"
+        {!isLoading && (
+          <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
+            {bots.map((bot: any) => {
+              const metadata = BOT_METADATA[bot.id] || {}
+              return (
+                <Card key={bot.id} className="group flex flex-col border-border bg-card transition-all hover:border-rx-purple/50">
+                  <CardHeader>
+                    <div className="flex items-start justify-between">
+                      <div className={`rounded-xl bg-gradient-to-br ${metadata.color || "from-gray-500 to-gray-600"} p-0.5`}>
+                        <div className="rounded-[10px] bg-background p-2">
+                          <Image
+                            src={bot.icon || "/placeholder.svg"}
+                            alt={bot.name}
+                            width={48}
+                            height={48}
+                            className="rounded-lg"
+                          />
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        {/* Live Status Indicator */}
+                        <Badge 
+                          variant="secondary" 
+                          className={`gap-1 ${
+                            bot.status === "online" 
+                              ? "bg-success/20 text-success" 
+                              : bot.status === "degraded"
+                              ? "bg-yellow-500/20 text-yellow-600"
+                              : "bg-destructive/20 text-destructive"
+                          }`}
                         >
-                          <ExternalLink className="h-4 w-4" />
-                          Add to Server
-                        </a>
-                      </Button>
-                      {bot.hasPremium && (
-                        <Link href={`/pricing#${bot.id}`}>
-                          <Button className="bg-gradient-to-r from-rx-purple to-rx-orange text-primary-foreground hover:opacity-90">
-                            Upgrade
-                          </Button>
-                        </Link>
+                          {bot.status === "online" ? (
+                            <Wifi className="h-3 w-3" />
+                          ) : (
+                            <WifiOff className="h-3 w-3" />
+                          )}
+                          {bot.status === "online" ? "Online" : bot.status === "degraded" ? "Degraded" : "Offline"}
+                        </Badge>
+                        {bot.isPrivate && (
+                          <Badge variant="secondary" className="gap-1">
+                            <Lock className="h-3 w-3" />
+                            Private
+                          </Badge>
+                        )}
+                        {metadata.hasPremium && (
+                          <Badge className="gap-1 bg-gradient-to-r from-rx-purple to-rx-orange text-primary-foreground">
+                            <Sparkles className="h-3 w-3" />
+                            Premium
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                    <CardTitle className="mt-4 text-xl text-card-foreground">{bot.name}</CardTitle>
+                    <CardDescription className="text-sm">{metadata.longDescription || bot.description}</CardDescription>
+                  </CardHeader>
+                  
+                  <CardContent className="flex-1">
+                    <div className="mb-4 flex items-center gap-4 text-sm text-muted-foreground">
+                      <span className="flex items-center gap-1">
+                        <Server className="h-4 w-4" />
+                        {bot.guildsCount?.toLocaleString() || 0} servers
+                      </span>
+                      {bot.activeSubscriptions > 0 && (
+                        <span className="flex items-center gap-1">
+                          <Sparkles className="h-4 w-4 text-rx-purple" />
+                          {bot.activeSubscriptions} premium
+                        </span>
                       )}
-                    </>
-                  )}
-                </div>
-              </CardFooter>
-            </Card>
-          ))}
-        </div>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <p className="text-xs font-medium uppercase text-muted-foreground">Features</p>
+                      <div className="flex flex-wrap gap-2">
+                        {(metadata.features || bot.capabilities?.features || []).map((feature: string) => (
+                          <Badge key={feature} variant="outline" className="text-xs">
+                            {feature}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  </CardContent>
+                  
+                  <CardFooter className="flex flex-col gap-3 border-t border-border pt-4">
+                    {metadata.hasPremium && metadata.priceFrom && (
+                      <p className="text-sm text-muted-foreground">
+                        From <span className="font-semibold text-foreground">{metadata.priceFrom}</span>/month
+                      </p>
+                    )}
+                    <div className="flex w-full gap-2">
+                      {bot.isPrivate ? (
+                        <Button disabled className="flex-1" variant="outline">
+                          Private Bot
+                        </Button>
+                      ) : (
+                        <>
+                          <Button className="flex-1 gap-2" variant="outline" asChild>
+                            <a
+                              href={`https://discord.com/oauth2/authorize?client_id=${bot.clientId}&scope=bot+applications.commands&permissions=8`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              <ExternalLink className="h-4 w-4" />
+                              Add to Server
+                            </a>
+                          </Button>
+                          {metadata.hasPremium && (
+                            <Link href={`/pricing#${bot.id}`}>
+                              <Button className="bg-gradient-to-r from-rx-purple to-rx-orange text-primary-foreground hover:opacity-90">
+                                Upgrade
+                              </Button>
+                            </Link>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </CardFooter>
+                </Card>
+              )
+            })}
+          </div>
+        )}
+
+        {/* Live Data Indicator */}
+        {data?.timestamp && (
+          <div className="mt-8 flex items-center justify-center gap-2 text-xs text-muted-foreground">
+            <div className="h-2 w-2 animate-pulse rounded-full bg-success" />
+            Live data - Last updated: {new Date(data.timestamp).toLocaleTimeString()}
+            <Button variant="ghost" size="sm" className="h-6 px-2" onClick={() => mutate()}>
+              <RefreshCw className="h-3 w-3" />
+            </Button>
+          </div>
+        )}
 
         {/* CTA */}
         <section className="mt-24 text-center">
