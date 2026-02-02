@@ -49,7 +49,9 @@ import {
   UserX,
   Clock,
   Info,
+  Lock,
 } from "lucide-react"
+import { hasManageGuildPermission } from "@/lib/data"
 import { toast } from "sonner"
 import { SyrupRxGeneralTab } from "@/components/syruprx/general-tab"
 
@@ -193,6 +195,28 @@ export default function GuildConfigPage({ params }: GuildConfigPageProps) {
   // Check if database is configured
   const isDbConfigured = configData?.configured !== false
 
+  // Permission checks for SyrupRx tabs
+  // Setup tab: Discord server owner OR has "Manage Server" permission
+  const canAccessSetup = guild.owner || hasManageGuildPermission(guild.permissions)
+  
+  // General tab: Discord server owner OR has one of the Admin roles from setup config
+  const adminRoleIds = Array.isArray(config["adminRoleIds"]) 
+    ? (config["adminRoleIds"] as string[]) 
+    : []
+  const userRoles = guild.memberRoles || []
+  const hasAdminRole = adminRoleIds.some(roleId => userRoles.includes(roleId))
+  const canAccessGeneral = guild.owner || hasAdminRole
+  
+  // Determine default tab based on permissions
+  const getDefaultTab = () => {
+    if (botId === "syruprx") {
+      if (canAccessGeneral) return "syruprx-general"
+      if (canAccessSetup) return "setup"
+      return "commands" // Commands tab is always accessible
+    }
+    return "general"
+  }
+
   return (
     <div className="space-y-6">
       {/* Back Link */}
@@ -280,7 +304,7 @@ export default function GuildConfigPage({ params }: GuildConfigPageProps) {
 
       {/* Configuration Tabs */}
       <div className="rounded-lg border border-border bg-card">
-        <Tabs defaultValue={botId === "syruprx" ? "syruprx-general" : "general"} className="w-full">
+        <Tabs defaultValue={getDefaultTab()} className="w-full">
           <div className="border-b border-border px-6">
             <TabsList className="h-auto rounded-none border-b-0 bg-transparent p-0">
               {botId !== "syruprx" && (
@@ -295,19 +319,31 @@ export default function GuildConfigPage({ params }: GuildConfigPageProps) {
               {botId === "syruprx" && (
                 <TabsTrigger
                   value="syruprx-general"
-                  className="rounded-none border-b-2 border-transparent px-4 py-3 data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none"
+                  disabled={!canAccessGeneral}
+                  className={cn(
+                    "rounded-none border-b-2 border-transparent px-4 py-3 data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none",
+                    !canAccessGeneral && "opacity-50 cursor-not-allowed"
+                  )}
+                  title={!canAccessGeneral ? "Requires server owner or admin role access" : undefined}
                 >
                   <Server className="mr-2 h-4 w-4" />
                   General
+                  {!canAccessGeneral && <Lock className="ml-2 h-3 w-3" />}
                 </TabsTrigger>
               )}
               {botId === "syruprx" && (
                 <TabsTrigger
                   value="setup"
-                  className="rounded-none border-b-2 border-transparent px-4 py-3 data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none"
+                  disabled={!canAccessSetup}
+                  className={cn(
+                    "rounded-none border-b-2 border-transparent px-4 py-3 data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none",
+                    !canAccessSetup && "opacity-50 cursor-not-allowed"
+                  )}
+                  title={!canAccessSetup ? "Requires server owner or Manage Server permission" : undefined}
                 >
                   <Wrench className="mr-2 h-4 w-4" />
                   Setup
+                  {!canAccessSetup && <Lock className="ml-2 h-3 w-3" />}
                 </TabsTrigger>
               )}
               {botId === "syruprx" && (
@@ -407,13 +443,24 @@ export default function GuildConfigPage({ params }: GuildConfigPageProps) {
           {/* SyrupRx General Tab */}
           {botId === "syruprx" && (
             <TabsContent value="syruprx-general" className="p-6">
-              <SyrupRxGeneralTab guildId={guildId} />
+              {canAccessGeneral ? (
+                <SyrupRxGeneralTab guildId={guildId} />
+              ) : (
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                  <Lock className="h-12 w-12 text-muted-foreground mb-4" />
+                  <h3 className="text-lg font-semibold text-card-foreground">Access Restricted</h3>
+                  <p className="mt-2 text-sm text-muted-foreground max-w-md">
+                    You need to be the server owner or have an admin role configured in the Setup tab to access this section.
+                  </p>
+                </div>
+              )}
             </TabsContent>
           )}
 
           {/* Setup Tab (SyrupRx specific - Marizma Configuration) */}
           {botId === "syruprx" && (
             <TabsContent value="setup" className="p-6">
+              {canAccessSetup ? (
               <div className="space-y-6">
                 <div>
                   <h3 className="text-lg font-semibold text-card-foreground">
@@ -619,6 +666,15 @@ export default function GuildConfigPage({ params }: GuildConfigPageProps) {
                   </div>
                 </div>
               </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                  <Lock className="h-12 w-12 text-muted-foreground mb-4" />
+                  <h3 className="text-lg font-semibold text-card-foreground">Access Restricted</h3>
+                  <p className="mt-2 text-sm text-muted-foreground max-w-md">
+                    You need to be the server owner or have the Manage Server permission to access this section.
+                  </p>
+                </div>
+              )}
             </TabsContent>
           )}
 

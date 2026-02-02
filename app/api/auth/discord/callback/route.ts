@@ -37,6 +37,10 @@ interface GuildMember {
   user?: DiscordUser
 }
 
+interface GuildWithRoles extends DiscordGuild {
+  memberRoles?: string[]
+}
+
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams
   const code = searchParams.get("code")
@@ -110,29 +114,44 @@ export async function GET(request: NextRequest) {
       guilds = await guildsResponse.json()
     }
 
+    // Fetch member roles for manageable guilds (owner or has manage permission)
+    const MANAGE_GUILD = BigInt(0x20)
+    const ADMINISTRATOR = BigInt(0x8)
+    
+    const guildsWithRoles: GuildWithRoles[] = await Promise.all(
+      guilds.map(async (guild) => {
+        const permInt = BigInt(guild.permissions)
+        const canManage = guild.owner || (permInt & MANAGE_GUILD) === MANAGE_GUILD || (permInt & ADMINISTRATOR) === ADMINISTRATOR
+        
+        if (canManage) {
+          try {
+            const memberResponse = await fetch(
+              `https://discord.com/api/users/@me/guilds/${guild.id}/member`,
+              {
+                headers: {
+                  Authorization: `Bearer ${tokens.access_token}`,
+                },
+              }
+            )
+
+            if (memberResponse.ok) {
+              const member: GuildMember = await memberResponse.json()
+              return { ...guild, memberRoles: member.roles }
+            }
+          } catch (err) {
+            console.error(`Failed to fetch member roles for guild ${guild.id}:`, err)
+          }
+        }
+        return guild
+      })
+    )
+
     // Check if user is admin (has required role in admin guild)
     let isAdmin = false
-    const adminGuild = guilds.find((g) => g.id === ADMIN_CONFIG.guildId)
+    const adminGuild = guildsWithRoles.find((g) => g.id === ADMIN_CONFIG.guildId)
     
-    if (adminGuild) {
-      // Fetch member info from the admin guild to check roles
-      try {
-        const memberResponse = await fetch(
-          `https://discord.com/api/users/@me/guilds/${ADMIN_CONFIG.guildId}/member`,
-          {
-            headers: {
-              Authorization: `Bearer ${tokens.access_token}`,
-            },
-          }
-        )
-
-        if (memberResponse.ok) {
-          const member: GuildMember = await memberResponse.json()
-          isAdmin = member.roles.includes(ADMIN_CONFIG.roleId)
-        }
-      } catch (err) {
-        console.error("Failed to fetch member roles:", err)
-      }
+    if (adminGuild && adminGuild.memberRoles) {
+      isAdmin = adminGuild.memberRoles.includes(ADMIN_CONFIG.roleId)
     }
 
     // Create session data
@@ -145,12 +164,13 @@ export async function GET(request: NextRequest) {
         email: user.email,
         globalName: user.global_name,
       },
-      guilds: guilds.map((g) => ({
+      guilds: guildsWithRoles.map((g) => ({
         id: g.id,
         name: g.name,
         icon: g.icon,
         owner: g.owner,
         permissions: g.permissions,
+        memberRoles: g.memberRoles || [],
       })),
       accessToken: tokens.access_token,
       refreshToken: tokens.refresh_token,
