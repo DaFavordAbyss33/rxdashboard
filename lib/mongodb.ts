@@ -1,6 +1,7 @@
 import { MongoClient, Db } from "mongodb"
 
 // Bot database configuration - check if env vars exist before using
+// v2: Graceful error handling for missing MongoDB URIs
 export const BOT_DATABASES = {
   syruprx: {
     uri: process.env.MONGODB_URI_SYRUPRX || "",
