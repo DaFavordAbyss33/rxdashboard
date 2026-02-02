@@ -1,0 +1,167 @@
+import { NextRequest, NextResponse } from "next/server"
+import { cookies } from "next/headers"
+import { ADMIN_CONFIG } from "@/lib/admin"
+
+const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID!
+const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET!
+const REDIRECT_URI = `${process.env.NEXTAUTH_URL}/api/auth/discord/callback`
+
+interface DiscordTokenResponse {
+  access_token: string
+  token_type: string
+  expires_in: number
+  refresh_token: string
+  scope: string
+}
+
+interface DiscordUser {
+  id: string
+  username: string
+  discriminator: string
+  avatar: string | null
+  email?: string
+  global_name?: string
+}
+
+interface DiscordGuild {
+  id: string
+  name: string
+  icon: string | null
+  owner: boolean
+  permissions: string
+}
+
+interface GuildMember {
+  roles: string[]
+  user?: DiscordUser
+}
+
+export async function GET(request: NextRequest) {
+  const searchParams = request.nextUrl.searchParams
+  const code = searchParams.get("code")
+  const error = searchParams.get("error")
+
+  if (error) {
+    console.error("Discord OAuth error:", error)
+    return NextResponse.redirect(new URL("/?error=oauth_error", process.env.NEXTAUTH_URL!))
+  }
+
+  if (!code) {
+    return NextResponse.redirect(new URL("/?error=no_code", process.env.NEXTAUTH_URL!))
+  }
+
+  try {
+    // Exchange code for access token
+    const tokenResponse = await fetch("https://discord.com/api/oauth2/token", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({
+        client_id: DISCORD_CLIENT_ID,
+        client_secret: DISCORD_CLIENT_SECRET,
+        grant_type: "authorization_code",
+        code,
+        redirect_uri: REDIRECT_URI,
+      }),
+    })
+
+    if (!tokenResponse.ok) {
+      const errorData = await tokenResponse.text()
+      console.error("Token exchange failed:", errorData)
+      return NextResponse.redirect(new URL("/?error=token_exchange_failed", process.env.NEXTAUTH_URL!))
+    }
+
+    const tokens: DiscordTokenResponse = await tokenResponse.json()
+
+    // Fetch user info
+    const userResponse = await fetch("https://discord.com/api/users/@me", {
+      headers: {
+        Authorization: `Bearer ${tokens.access_token}`,
+      },
+    })
+
+    if (!userResponse.ok) {
+      console.error("Failed to fetch user info")
+      return NextResponse.redirect(new URL("/?error=user_fetch_failed", process.env.NEXTAUTH_URL!))
+    }
+
+    const user: DiscordUser = await userResponse.json()
+
+    // Fetch user's guilds
+    const guildsResponse = await fetch("https://discord.com/api/users/@me/guilds", {
+      headers: {
+        Authorization: `Bearer ${tokens.access_token}`,
+      },
+    })
+
+    let guilds: DiscordGuild[] = []
+    if (guildsResponse.ok) {
+      guilds = await guildsResponse.json()
+    }
+
+    // Check if user is admin (has required role in admin guild)
+    let isAdmin = false
+    const adminGuild = guilds.find((g) => g.id === ADMIN_CONFIG.guildId)
+    
+    if (adminGuild) {
+      // Fetch member info from the admin guild to check roles
+      try {
+        const memberResponse = await fetch(
+          `https://discord.com/api/users/@me/guilds/${ADMIN_CONFIG.guildId}/member`,
+          {
+            headers: {
+              Authorization: `Bearer ${tokens.access_token}`,
+            },
+          }
+        )
+
+        if (memberResponse.ok) {
+          const member: GuildMember = await memberResponse.json()
+          isAdmin = member.roles.includes(ADMIN_CONFIG.roleId)
+        }
+      } catch (err) {
+        console.error("Failed to fetch member roles:", err)
+      }
+    }
+
+    // Create session data
+    const sessionData = {
+      user: {
+        id: user.id,
+        username: user.username,
+        discriminator: user.discriminator,
+        avatar: user.avatar,
+        email: user.email,
+        globalName: user.global_name,
+      },
+      guilds: guilds.map((g) => ({
+        id: g.id,
+        name: g.name,
+        icon: g.icon,
+        owner: g.owner,
+        permissions: g.permissions,
+      })),
+      accessToken: tokens.access_token,
+      refreshToken: tokens.refresh_token,
+      expiresAt: Date.now() + tokens.expires_in * 1000,
+      isAdmin,
+    }
+
+    // Store session in HTTP-only cookie
+    const cookieStore = await cookies()
+    cookieStore.set("discord_session", JSON.stringify(sessionData), {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: 60 * 60 * 24 * 7, // 7 days
+      path: "/",
+    })
+
+    // Redirect to dashboard
+    return NextResponse.redirect(new URL("/dashboard/bots", process.env.NEXTAUTH_URL!))
+  } catch (error) {
+    console.error("OAuth callback error:", error)
+    return NextResponse.redirect(new URL("/?error=callback_failed", process.env.NEXTAUTH_URL!))
+  }
+}
