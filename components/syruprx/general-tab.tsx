@@ -314,6 +314,19 @@ export function SyrupRxGeneralTab({ guildId }: SyrupRxGeneralTabProps) {
                     <span>{serverInfo.ServerDescription}</span>
                   </div>
                 )}
+                {serverInfo.HeadAdmins && serverInfo.HeadAdmins.length > 0 && (
+                  <div className="col-span-2">
+                    <span className="text-muted-foreground">Co-Owners:</span>{" "}
+                    <span className="text-sm">
+                      {serverInfo.HeadAdmins.map((headAdminId, index) => (
+                        <span key={headAdminId}>
+                          {index > 0 && ", "}
+                          {robloxUsers[headAdminId]?.displayName || robloxUsers[headAdminId]?.name || `User ${headAdminId}`}
+                        </span>
+                      ))}
+                    </span>
+                  </div>
+                )}
                 {serverInfo.Admins && serverInfo.Admins.length > 0 && (
                   <div className="col-span-2">
                     <span className="text-muted-foreground">Admins:</span>{" "}
