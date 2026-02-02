@@ -65,30 +65,30 @@ export default function SettingsPage() {
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <Label className="text-sm font-medium">Email Notifications</Label>
+              <Label className="text-sm font-medium">New Bot Added</Label>
               <p className="text-sm text-muted-foreground">
-                Receive email alerts for critical incidents
+                Get notified when a new bot is added to the dashboard
               </p>
             </div>
             <Switch defaultChecked />
           </div>
           <div className="flex items-center justify-between">
             <div>
-              <Label className="text-sm font-medium">Discord DM Alerts</Label>
+              <Label className="text-sm font-medium">Bot Downtime Alerts</Label>
               <p className="text-sm text-muted-foreground">
-                Get notified via Discord DM for bot issues
+                Get notified when a bot goes offline or experiences issues
               </p>
             </div>
             <Switch defaultChecked />
           </div>
           <div className="flex items-center justify-between">
             <div>
-              <Label className="text-sm font-medium">Weekly Summary</Label>
+              <Label className="text-sm font-medium">Creator Notices</Label>
               <p className="text-sm text-muted-foreground">
-                Receive a weekly summary of bot activity
+                Receive notices and announcements from the bot creator
               </p>
             </div>
-            <Switch />
+            <Switch defaultChecked />
           </div>
         </div>
       </div>
