@@ -21,7 +21,6 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
-import { Textarea } from "@/components/ui/textarea"
 import { 
   Server, 
   Settings, 
@@ -93,12 +92,6 @@ export default function AdminPage() {
   const [localSettings, setLocalSettings] = useState<BotSettings>(DEFAULT_SETTINGS)
   const [isSaving, setIsSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState<{ type: "success" | "error"; text: string } | null>(null)
-  
-  // Notice/Email state
-  const [noticeSubject, setNoticeSubject] = useState("")
-  const [noticeMessage, setNoticeMessage] = useState("")
-  const [isSendingNotice, setIsSendingNotice] = useState(false)
-  const [noticeResult, setNoticeResult] = useState<{ type: "success" | "error"; text: string } | null>(null)
   
   // Template state
   const [isUploadingTemplate, setIsUploadingTemplate] = useState<string | null>(null)
@@ -280,43 +273,6 @@ export default function AdminPage() {
       setTemplateResult({ type: "error", text: "Network error. Please try again." })
     } finally {
       setTemplateAction(null)
-    }
-  }
-
-  // Send notice/email to all users
-  const handleSendNotice = async () => {
-    if (!noticeSubject.trim() || !noticeMessage.trim()) {
-      setNoticeResult({ type: "error", text: "Please fill in both subject and message" })
-      return
-    }
-
-    setIsSendingNotice(true)
-    setNoticeResult(null)
-
-    try {
-      const response = await fetch("/api/admin/notices", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          subject: noticeSubject,
-          message: noticeMessage,
-          sentBy: user?.username || "admin",
-        }),
-      })
-
-      const data = await response.json()
-
-      if (response.ok && data.success) {
-        setNoticeResult({ type: "success", text: `Notice sent to ${data.recipientCount} user(s)!` })
-        setNoticeSubject("")
-        setNoticeMessage("")
-      } else {
-        setNoticeResult({ type: "error", text: data.error || "Failed to send notice" })
-      }
-    } catch (error) {
-      setNoticeResult({ type: "error", text: "Network error. Please try again." })
-    } finally {
-      setIsSendingNotice(false)
     }
   }
 
@@ -735,99 +691,141 @@ export default function AdminPage() {
 
         {/* Notices Tab */}
         <TabsContent value="notices" className="mt-6 space-y-6">
+          {/* Current Newsletter Issue Info */}
           <Card>
             <CardHeader>
               <div className="flex items-center gap-2">
                 <Mail className="h-5 w-5 text-primary" />
-                <CardTitle>Send Notice to Users</CardTitle>
+                <CardTitle>Newsletter Issue Info</CardTitle>
               </div>
               <CardDescription>
-                Compose and send email notifications to all users who have enabled creator notices.
+                Current newsletter metadata for template variables
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="space-y-2">
-                <Label htmlFor="noticeSubject">Subject</Label>
-                <Input
-                  id="noticeSubject"
-                  placeholder="Important update about your bots..."
-                  value={noticeSubject}
-                  onChange={(e) => {
-                    setNoticeSubject(e.target.value)
-                    setNoticeResult(null)
-                  }}
-                  maxLength={100}
-                />
+            <CardContent>
+              <div className="grid gap-4 md:grid-cols-3">
+                <div className="rounded-lg border p-4 text-center">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide">Issue Number</p>
+                  <p className="mt-1 text-2xl font-bold text-primary">
+                    {new Date().getFullYear()}.{String(new Date().getMonth() + 1).padStart(2, "0")}
+                  </p>
+                </div>
+                <div className="rounded-lg border p-4 text-center">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide">Month</p>
+                  <p className="mt-1 text-2xl font-bold">
+                    {new Date().toLocaleString("en-GB", { month: "long" })}
+                  </p>
+                </div>
+                <div className="rounded-lg border p-4 text-center">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide">Year</p>
+                  <p className="mt-1 text-2xl font-bold">
+                    {new Date().getFullYear()}
+                  </p>
+                </div>
               </div>
+              <p className="mt-4 text-sm text-muted-foreground">
+                Use these values in Resend when editing your templates. Variables: <code className="rounded bg-muted px-1 py-0.5 text-xs">ISSUE_NUMBER</code>, <code className="rounded bg-muted px-1 py-0.5 text-xs">MONTH</code>, <code className="rounded bg-muted px-1 py-0.5 text-xs">YEAR</code>
+              </p>
+            </CardContent>
+          </Card>
 
-              <div className="space-y-2">
-                <Label htmlFor="noticeMessage">Message</Label>
-                <Textarea
-                  id="noticeMessage"
-                  placeholder="Write your notice message here..."
-                  value={noticeMessage}
-                  onChange={(e) => {
-                    setNoticeMessage(e.target.value)
-                    setNoticeResult(null)
-                  }}
-                  rows={6}
-                  maxLength={2000}
-                />
-                <p className="text-xs text-muted-foreground">
-                  {noticeMessage.length}/2000 characters
-                </p>
+          {/* Quick Actions */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Send className="h-5 w-5 text-primary" />
+                  <CardTitle>Quick Actions</CardTitle>
+                </div>
+                <a 
+                  href="https://resend.com/templates" 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1 text-sm text-muted-foreground hover:text-primary transition-colors"
+                >
+                  Open Resend Dashboard
+                  <ExternalLink className="h-3 w-3" />
+                </a>
               </div>
-
-              {/* Notice Result */}
-              {noticeResult && (
+              <CardDescription>
+                Push templates to Resend, then edit them in the Resend dashboard
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Template Result */}
+              {templateResult && (
                 <div className={`flex items-center gap-2 rounded-lg p-4 ${
-                  noticeResult.type === "success" 
+                  templateResult.type === "success" 
                     ? "bg-green-500/10 border border-green-500/50" 
                     : "bg-destructive/10 border border-destructive/50"
                 }`}>
-                  {noticeResult.type === "success" ? (
+                  {templateResult.type === "success" ? (
                     <CheckCircle className="h-5 w-5 text-green-500" />
                   ) : (
                     <AlertTriangle className="h-5 w-5 text-destructive" />
                   )}
                   <span className={`text-sm ${
-                    noticeResult.type === "success" ? "text-green-500" : "text-destructive"
+                    templateResult.type === "success" ? "text-green-500" : "text-destructive"
                   }`}>
-                    {noticeResult.text}
+                    {templateResult.text}
                   </span>
                 </div>
               )}
 
-              <Button 
-                className="w-full gap-2" 
-                onClick={handleSendNotice}
-                disabled={isSendingNotice || !noticeSubject.trim() || !noticeMessage.trim()}
-              >
-                {isSendingNotice ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Sending...
-                  </>
-                ) : (
-                  <>
-                    <Send className="h-4 w-4" />
-                    Send Notice
-                  </>
-                )}
-              </Button>
-            </CardContent>
-          </Card>
+              <div className="grid gap-4 md:grid-cols-2">
+                {/* Newsletter Template */}
+                <div className="flex items-center justify-between rounded-lg border p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
+                      <Mail className="h-5 w-5 text-primary" />
+                    </div>
+                    <div>
+                      <p className="font-medium">Newsletter Template</p>
+                      <p className="text-xs text-muted-foreground">Monthly updates email</p>
+                    </div>
+                  </div>
+                  <Button 
+                    size="sm"
+                    onClick={() => handleUploadTemplate("newsletter")}
+                    disabled={isUploadingTemplate !== null}
+                  >
+                    {isUploadingTemplate === "newsletter" ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <>
+                        <Upload className="mr-2 h-4 w-4" />
+                        Push to Resend
+                      </>
+                    )}
+                  </Button>
+                </div>
 
-          {/* Notice History (placeholder for future) */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Recent Notices</CardTitle>
-              <CardDescription>Previously sent notices will appear here</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="flex flex-col items-center justify-center py-8 text-center">
-                <Mail className="h-12 w-12 text-muted-foreground/50" />
-                <p className="mt-4 text-muted-foreground">No notices sent yet</p>
+                {/* Notice Template */}
+                <div className="flex items-center justify-between rounded-lg border p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
+                      <FileText className="h-5 w-5 text-primary" />
+                    </div>
+                    <div>
+                      <p className="font-medium">Notice Template</p>
+                      <p className="text-xs text-muted-foreground">Announcements email</p>
+                    </div>
+                  </div>
+                  <Button 
+                    size="sm"
+                    onClick={() => handleUploadTemplate("notice")}
+                    disabled={isUploadingTemplate !== null}
+                  >
+                    {isUploadingTemplate === "notice" ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <>
+                        <Upload className="mr-2 h-4 w-4" />
+                        Push to Resend
+                      </>
+                    )}
+                  </Button>
+                </div>
               </div>
             </CardContent>
           </Card>
