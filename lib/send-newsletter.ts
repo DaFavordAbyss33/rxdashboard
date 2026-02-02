@@ -1,37 +1,54 @@
 import { Resend } from "resend";
-import { readFileSync } from "fs";
-import { join } from "path";
 import { getNewsletterIssue } from "@/lib/newsletterMeta";
+import { buildNewsletter } from "@/lib/email-templates/newsletter-builder";
+import { NewsletterContent } from "@/lib/email-templates/components";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
-// Load the default newsletter template
-export function getNewsletterTemplate(): string {
-  const templatePath = join(process.cwd(), "lib/email-templates/newsletter.html");
-  return readFileSync(templatePath, "utf-8");
-}
-
+/**
+ * Send a newsletter email
+ * 
+ * Usage with content object (recommended for reusability):
+ * ```ts
+ * await sendNewsletter({
+ *   to: ["user@example.com"],
+ *   content: {
+ *     heroTitle: "FEBRUARY UPDATE",
+ *     highlights: ["New feature A", "Bug fix B", "Improvement C"],
+ *     features: [{ title: "Cool Feature", description: "Details here" }],
+ *   }
+ * })
+ * ```
+ * 
+ * Usage with raw HTML:
+ * ```ts
+ * await sendNewsletter({ to: ["user@example.com"], htmlTemplate: "<html>..." })
+ * ```
+ */
 export async function sendNewsletter({
   to,
-  htmlTemplate
+  content,
+  htmlTemplate,
+  subject,
 }: {
   to: string[];
+  content?: Partial<NewsletterContent>;
   htmlTemplate?: string;
+  subject?: string;
 }) {
-  const { ISSUE, YEAR, MONTH } = getNewsletterIssue();
+  const { YEAR, MONTH } = getNewsletterIssue();
 
-  // Use provided template or load the default one
-  const template = htmlTemplate || getNewsletterTemplate();
-
-  const html = template
-    .replace(/{{MONTH}}/g, MONTH)
-    .replace(/{{YEAR}}/g, String(YEAR))
-    .replace(/{{ISSUE_NUMBER}}/g, ISSUE);
+  // Build HTML from content object or use provided template
+  const html = htmlTemplate || buildNewsletter(content || {});
 
   await resend.emails.send({
     from: "Rx Systems <newsletter@rxdev.org>",
     to,
-    subject: `Rx Systems Newsletter — ${MONTH} ${YEAR}`,
+    subject: subject || `Rx Systems Newsletter — ${MONTH} ${YEAR}`,
     html
   });
 }
+
+// Re-export for convenience
+export { buildNewsletter } from "@/lib/email-templates/newsletter-builder";
+export type { NewsletterContent } from "@/lib/email-templates/components";
