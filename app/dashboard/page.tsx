@@ -1,60 +1,144 @@
 "use client"
 
 import Link from "next/link"
-import { bots, incidents, installations } from "@/lib/data"
+import { useRouter } from "next/navigation"
+import { useEffect } from "react"
+import useSWR from "swr"
+import { useAuth } from "@/lib/auth-context"
 import { BotStatusCard } from "@/components/dashboard/bot-status-card"
 import { IncidentsList } from "@/components/dashboard/incidents-list"
 import { StatsCard } from "@/components/dashboard/stats-card"
-import { Bot, Server, AlertTriangle, Activity } from "lucide-react"
+import { Bot, Server, AlertTriangle, DollarSign, RefreshCw, Shield } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Skeleton } from "@/components/ui/skeleton"
+
+const fetcher = (url: string) => fetch(url).then((res) => res.json())
 
 export default function DashboardPage() {
-  const onlineBots = bots.filter((b) => b.status === "online").length
-  const totalGuilds = bots.reduce((acc, b) => acc + b.guildsCount, 0)
-  const recentIncidents = incidents.filter((i) => i.type === "error").length
-  const avgPing = Math.round(
-    bots.filter((b) => b.status === "online").reduce((acc, b) => acc + b.wsPing, 0) /
-      bots.filter((b) => b.status === "online").length
+  const { isAdmin, isAdminLoading, isAuthenticated, isLoading } = useAuth()
+  const router = useRouter()
+
+  // Redirect non-admins
+  useEffect(() => {
+    if (!isLoading && !isAdminLoading && isAuthenticated && !isAdmin) {
+      router.push("/dashboard/bots")
+    }
+  }, [isAdmin, isAdminLoading, isAuthenticated, isLoading, router])
+
+  const { data: botsData, error: botsError, isLoading: botsLoading, mutate: mutateBots } = useSWR(
+    "/api/bots",
+    fetcher,
+    { refreshInterval: 30000 } // Refresh every 30 seconds
   )
+
+  const { data: statsData, error: statsError, isLoading: statsLoading, mutate: mutateStats } = useSWR(
+    "/api/stats",
+    fetcher,
+    { refreshInterval: 30000 }
+  )
+
+  const { data: incidentsData, error: incidentsError, isLoading: incidentsLoading, mutate: mutateIncidents } = useSWR(
+    "/api/incidents?limit=5",
+    fetcher,
+    { refreshInterval: 60000 } // Refresh every minute
+  )
+
+  const handleRefresh = () => {
+    mutateBots()
+    mutateStats()
+    mutateIncidents()
+  }
+
+  const bots = botsData?.bots || []
+  const stats = statsData || {}
+  const incidents = incidentsData?.incidents || []
+
+  // Show loading while checking admin status
+  if (isLoading || isAdminLoading) {
+    return (
+      <div className="flex min-h-[50vh] items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+          <p className="text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Show access denied for non-admins
+  if (!isAdmin) {
+    return (
+      <div className="flex min-h-[50vh] flex-col items-center justify-center gap-4">
+        <Shield className="h-16 w-16 text-destructive" />
+        <h2 className="text-2xl font-bold">Access Denied</h2>
+        <p className="text-muted-foreground">You do not have permission to access this page.</p>
+        <Button onClick={() => router.push("/dashboard/bots")}>
+          Go to Bots
+        </Button>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-8">
       {/* Page Header */}
-      <div>
-        <h2 className="text-2xl font-bold text-foreground">Overview</h2>
-        <p className="mt-1 text-muted-foreground">
-          Monitor your bot ecosystem at a glance
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-foreground">Overview</h2>
+          <p className="mt-1 text-muted-foreground">
+            Monitor your bot ecosystem at a glance
+          </p>
+        </div>
+        <Button variant="outline" size="sm" onClick={handleRefresh}>
+          <RefreshCw className="mr-2 h-4 w-4" />
+          Refresh
+        </Button>
       </div>
 
       {/* Stats Grid */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatsCard
-          title="Active Bots"
-          value={`${onlineBots}/${bots.length}`}
-          icon={Bot}
-          trend={onlineBots === bots.length ? "All systems operational" : "Some bots offline"}
-          trendUp={onlineBots === bots.length}
-        />
-        <StatsCard
-          title="Total Guilds"
-          value={totalGuilds.toLocaleString()}
-          icon={Server}
-          trend="Across all bots"
-        />
-        <StatsCard
-          title="Recent Errors"
-          value={recentIncidents.toString()}
-          icon={AlertTriangle}
-          trend="In the last 24h"
-          trendUp={recentIncidents === 0}
-        />
-        <StatsCard
-          title="Avg. Latency"
-          value={`${avgPing}ms`}
-          icon={Activity}
-          trend="WebSocket ping"
-          trendUp={avgPing < 100}
-        />
+        {statsLoading ? (
+          <>
+            <Skeleton className="h-32 rounded-lg" />
+            <Skeleton className="h-32 rounded-lg" />
+            <Skeleton className="h-32 rounded-lg" />
+            <Skeleton className="h-32 rounded-lg" />
+          </>
+        ) : statsError ? (
+          <div className="col-span-4 rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-center text-destructive">
+            Failed to load stats. Please check your configuration.
+          </div>
+        ) : (
+          <>
+            <StatsCard
+              title="Active Bots"
+              value={`${stats.bots?.online || 0}/${stats.bots?.total || 0}`}
+              icon={Bot}
+              trend={stats.bots?.allOnline ? "All systems operational" : "Some bots offline"}
+              trendUp={stats.bots?.allOnline}
+            />
+            <StatsCard
+              title="Total Guilds"
+              value={(stats.guilds?.total || 0).toLocaleString()}
+              icon={Server}
+              trend="Across all bots"
+            />
+            <StatsCard
+              title="Active Subscriptions"
+              value={(stats.subscriptions?.active || 0).toString()}
+              icon={AlertTriangle}
+              trend="Paid customers"
+              trendUp={true}
+            />
+            <StatsCard
+              title="Monthly Revenue"
+              value={`$${(stats.revenue?.mrr || 0).toLocaleString()}`}
+              icon={DollarSign}
+              trend={`$${(stats.revenue?.available || 0).toFixed(2)} available`}
+              trendUp={true}
+            />
+          </>
+        )}
       </div>
 
       {/* Bot Hub Grid */}
@@ -68,15 +152,27 @@ export default function DashboardPage() {
             View all
           </Link>
         </div>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {bots.map((bot) => (
-            <BotStatusCard
-              key={bot.id}
-              bot={bot}
-              installedCount={installations.filter((i) => i.botId === bot.id).length}
-            />
-          ))}
-        </div>
+        {botsLoading ? (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <Skeleton className="h-64 rounded-lg" />
+            <Skeleton className="h-64 rounded-lg" />
+            <Skeleton className="h-64 rounded-lg" />
+          </div>
+        ) : botsError ? (
+          <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-center text-destructive">
+            Failed to load bots. Please check your environment variables.
+          </div>
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {bots.map((bot: any) => (
+              <BotStatusCard
+                key={bot.id}
+                bot={bot}
+                installedCount={bot.guildsCount || 0}
+              />
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Recent Incidents */}
@@ -90,8 +186,31 @@ export default function DashboardPage() {
             View all
           </Link>
         </div>
-        <IncidentsList incidents={incidents.slice(0, 5)} />
+        {incidentsLoading ? (
+          <div className="space-y-2">
+            <Skeleton className="h-16 rounded-lg" />
+            <Skeleton className="h-16 rounded-lg" />
+            <Skeleton className="h-16 rounded-lg" />
+          </div>
+        ) : incidentsError ? (
+          <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-center text-destructive">
+            Failed to load incidents.
+          </div>
+        ) : incidents.length === 0 ? (
+          <div className="rounded-lg border border-border bg-card p-8 text-center text-muted-foreground">
+            No recent incidents. All systems running smoothly.
+          </div>
+        ) : (
+          <IncidentsList incidents={incidents} />
+        )}
       </div>
+
+      {/* Last Updated */}
+      {statsData?.timestamp && (
+        <p className="text-center text-xs text-muted-foreground">
+          Last updated: {new Date(statsData.timestamp).toLocaleString()}
+        </p>
+      )}
     </div>
   )
 }

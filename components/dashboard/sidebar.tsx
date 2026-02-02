@@ -4,19 +4,22 @@ import Link from "next/link"
 import Image from "next/image"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
-import { LayoutDashboard, Settings, AlertTriangle, Server, Bot, Crown } from "lucide-react"
+import { LayoutDashboard, Settings, AlertTriangle, Server, Bot, Crown, Shield } from "lucide-react"
+import { useAuth } from "@/lib/auth-context"
 
 const navItems = [
-  { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
-  { href: "/dashboard/bots", label: "Bots", icon: Bot },
-  { href: "/dashboard/subscriptions", label: "Subscriptions", icon: Crown },
-  { href: "/dashboard/incidents", label: "Incidents", icon: AlertTriangle },
-  { href: "/dashboard/guilds", label: "My Guilds", icon: Server },
-  { href: "/dashboard/settings", label: "Settings", icon: Settings },
+  { href: "/dashboard", label: "Overview", icon: LayoutDashboard, adminOnly: true },
+  { href: "/dashboard/bots", label: "Bots", icon: Bot, adminOnly: false },
+  { href: "/dashboard/subscriptions", label: "Subscriptions", icon: Crown, adminOnly: false },
+  { href: "/dashboard/incidents", label: "Incidents", icon: AlertTriangle, adminOnly: false },
+  { href: "/dashboard/guilds", label: "My Guilds", icon: Server, adminOnly: false },
+  { href: "/dashboard/admin", label: "Admin Panel", icon: Shield, adminOnly: true },
+  { href: "/dashboard/settings", label: "Settings", icon: Settings, adminOnly: false },
 ]
 
 export function DashboardSidebar() {
   const pathname = usePathname()
+  const { isAdmin } = useAuth()
 
   return (
     <aside className="flex w-64 flex-col border-r border-border bg-sidebar">
@@ -36,7 +39,9 @@ export function DashboardSidebar() {
 
       {/* Navigation */}
       <nav className="flex-1 space-y-1 p-4">
-        {navItems.map((item) => {
+        {navItems
+          .filter((item) => !item.adminOnly || isAdmin)
+          .map((item) => {
           const isActive = pathname === item.href || 
             (item.href !== "/dashboard" && pathname.startsWith(item.href))
           
