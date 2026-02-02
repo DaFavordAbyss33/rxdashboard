@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server"
 import { cookies } from "next/headers"
+import { Resend } from "resend"
 
 export const dynamic = "force-dynamic"
 
+// Initialize Resend client
+const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null
+
 // For now, we'll store notices in memory (in production, use a database)
-// This is a simple implementation that can be extended later
 const sentNotices: Array<{
   id: string
   subject: string
@@ -17,38 +20,69 @@ const sentNotices: Array<{
 // Mock user emails - In production, fetch from your user database
 // Users who have "Creator Notices" enabled in their settings
 const getSubscribedUsers = async () => {
-  // This would normally query your database for users with notifications enabled
-  // For now, return an empty array since we don't have email storage set up
+  // TODO: Query your MongoDB database for users with notifications enabled
+  // For now, return test emails or fetch from a configured list
+  const testEmail = process.env.ADMIN_EMAIL || process.env.TEST_EMAIL
+  if (testEmail) {
+    return [{ email: testEmail, username: "Admin" }]
+  }
   return [] as Array<{ email: string; username: string }>
 }
 
-// Send notice email (placeholder - integrate with email service like Resend, SendGrid, etc.)
+// Send notice email via Resend
 const sendEmailNotice = async (
   recipients: Array<{ email: string; username: string }>,
   subject: string,
   message: string
 ) => {
-  // In production, integrate with an email service:
-  // - Resend: https://resend.com
-  // - SendGrid: https://sendgrid.com
-  // - AWS SES: https://aws.amazon.com/ses/
-  
-  // Example with Resend:
-  // const resend = new Resend(process.env.RESEND_API_KEY)
-  // for (const recipient of recipients) {
-  //   await resend.emails.send({
-  //     from: 'RxSystems <notifications@rxsystems.app>',
-  //     to: recipient.email,
-  //     subject: subject,
-  //     html: `<p>Hi ${recipient.username},</p><p>${message}</p>`
-  //   })
-  // }
+  if (!resend) {
+    console.error("[notices] Resend API key not configured")
+    return 0
+  }
 
-  console.log(`[notices] Would send email to ${recipients.length} recipients:`)
-  console.log(`[notices] Subject: ${subject}`)
-  console.log(`[notices] Message: ${message}`)
+  if (recipients.length === 0) {
+    console.log("[notices] No recipients to send to")
+    return 0
+  }
 
-  return recipients.length
+  let successCount = 0
+
+  for (const recipient of recipients) {
+    try {
+      await resend.emails.send({
+        from: "RxSystems <onboarding@resend.dev>", // Use your verified domain: notifications@rxsystems.app
+        to: recipient.email,
+        subject: `[RxSystems] ${subject}`,
+        html: `
+          <!DOCTYPE html>
+          <html>
+            <head>
+              <meta charset="utf-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            </head>
+            <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #0a0a0a; color: #fafafa; padding: 40px 20px;">
+              <div style="max-width: 600px; margin: 0 auto; background-color: #171717; border-radius: 12px; padding: 32px; border: 1px solid #262626;">
+                <h1 style="color: #fafafa; font-size: 24px; margin-bottom: 8px;">RxSystems Notice</h1>
+                <h2 style="color: #a1a1aa; font-size: 18px; font-weight: normal; margin-bottom: 24px;">${subject}</h2>
+                <p style="color: #fafafa; margin-bottom: 16px;">Hi ${recipient.username},</p>
+                <div style="color: #d4d4d8; line-height: 1.6; white-space: pre-wrap;">${message}</div>
+                <hr style="border: none; border-top: 1px solid #262626; margin: 32px 0;">
+                <p style="color: #71717a; font-size: 12px;">
+                  You received this email because you have Creator Notices enabled in your RxSystems dashboard settings.
+                </p>
+              </div>
+            </body>
+          </html>
+        `,
+      })
+      successCount++
+    } catch (error) {
+      console.error(`[notices] Failed to send to ${recipient.email}:`, error)
+    }
+  }
+
+  console.log(`[notices] Sent ${successCount}/${recipients.length} emails`)
+  return successCount
 }
 
 // GET - Fetch sent notices history
