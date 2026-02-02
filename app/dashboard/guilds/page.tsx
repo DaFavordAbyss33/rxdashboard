@@ -1,5 +1,6 @@
 "use client"
 
+import { useMemo } from "react"
 import Link from "next/link"
 import useSWR from "swr"
 import { useAuth } from "@/lib/auth-context"
@@ -16,30 +17,40 @@ interface Bot {
   isPrivate?: boolean
 }
 
+interface BotGuild {
+  id: string
+  name: string
+}
+
 export default function GuildsPage() {
   const { managableGuilds } = useAuth()
 
   // Fetch all bots
-  const { data: botsData, isLoading } = useSWR("/api/bots", fetcher)
+  const { data: botsData, isLoading: botsLoading } = useSWR("/api/bots", fetcher)
   const bots = (botsData?.bots || []) as Bot[]
 
-  // Fetch all bot guilds in parallel
-  const botGuildsQueries = bots.map((bot) => 
-    useSWR(`/api/bots/${bot.id}/guilds`, fetcher)
+  // Fetch all guild installations in one API call
+  const { data: installationsData, isLoading: installationsLoading } = useSWR(
+    "/api/guilds/installations",
+    fetcher
   )
 
   // Create a map of guildId -> installed botIds
-  const guildBotMap = new Map<string, string[]>()
-  bots.forEach((bot, index) => {
-    const guildsData = botGuildsQueries[index]?.data
-    if (guildsData?.guilds) {
-      guildsData.guilds.forEach((guild: { id: string }) => {
-        const existing = guildBotMap.get(guild.id) || []
-        existing.push(bot.id)
-        guildBotMap.set(guild.id, existing)
+  const guildBotMap = useMemo(() => {
+    const map = new Map<string, string[]>()
+    if (installationsData?.installations) {
+      Object.entries(installationsData.installations).forEach(([botId, guilds]) => {
+        (guilds as BotGuild[]).forEach((guild) => {
+          const existing = map.get(guild.id) || []
+          existing.push(botId)
+          map.set(guild.id, existing)
+        })
       })
     }
-  })
+    return map
+  }, [installationsData])
+
+  const isLoading = botsLoading || installationsLoading
 
   if (isLoading) {
     return (
