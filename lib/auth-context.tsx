@@ -38,7 +38,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const response = await fetch("/api/auth/session")
       const data = await response.json()
 
+      console.log("[v0] Client received session data:", data)
+
       if (data.isAuthenticated && data.user) {
+        // Double-check on client side for mock data
+        if (data.user.username === "BotAdmin" || data.user.id === "123456789012345678") {
+          console.log("[v0] Client detected mock data, clearing session")
+          await fetch("/api/auth/session", { method: "DELETE" })
+          setUser(null)
+          setGuilds([])
+          setIsAdmin(false)
+          return
+        }
+
         // Convert session user to DiscordUser format
         const discordUser: DiscordUser = {
           id: data.user.id,
@@ -78,8 +90,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const login = () => {
-    // Redirect to Discord OAuth
-    window.location.href = "/api/auth/discord"
+    // Force clear any old session before redirecting to OAuth
+    fetch("/api/auth/session", { method: "DELETE" })
+      .then(() => {
+        // Redirect to Discord OAuth
+        window.location.href = "/api/auth/discord"
+      })
+      .catch(() => {
+        // Redirect anyway
+        window.location.href = "/api/auth/discord"
+      })
   }
 
   const logout = async () => {
