@@ -102,8 +102,10 @@ export default function BotDetailPage({ params }: BotDetailPageProps) {
   // Admin guild IDs from server (matched using bot token to fetch member roles)
   const adminRoleGuildIds = new Set<string>(adminGuildsData?.adminGuildIds || [])
   const isMasterUser = adminGuildsData?.isMaster === true
-  // All guild IDs where bot is installed (only available for master users)
-  const allInstalledGuildIds = new Set<string>(adminGuildsData?.allGuildIds || [])
+  // All guild IDs where bot is installed (from bot guilds API, more complete than admin-guilds)
+  const allInstalledGuildIds = new Set<string>(
+    (guildsData?.guilds || []).map((g: BotGuild) => g.id)
+  )
   
   console.log("[v0] Bot page - adminRoleGuildIds:", Array.from(adminRoleGuildIds), "managableGuilds count:", managableGuilds.length)
 
