@@ -17,7 +17,8 @@ export async function GET() {
     console.log("[v0] Session data:", {
       userId: session.user?.id,
       username: session.user?.username,
-      hasGuilds: !!session.guilds,
+      hasGuildIds: !!session.guildIds,
+      guildIdsCount: session.guildIds?.length || session.guilds?.length || 0,
     })
     
     // Check if session has expired
@@ -49,7 +50,9 @@ export async function GET() {
 
     return NextResponse.json({
       user: session.user,
-      guilds: session.guilds,
+      // Support both old format (guilds array) and new format (guildIds array)
+      guildIds: session.guildIds || (session.guilds?.map((g: { id: string }) => g.id) || []),
+      guilds: session.guilds, // Keep for backwards compatibility
       isAdmin: session.isAdmin,
       isAuthenticated: true,
     })

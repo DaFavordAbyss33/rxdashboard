@@ -34,6 +34,7 @@ function maskSecrets(config: Record<string, unknown>): Record<string, unknown> {
 }
 
 // Verify user has permission to manage this guild
+// Fetches current guild membership from Discord to get fresh permissions
 async function verifyGuildPermission(guildId: string): Promise<boolean> {
   const cookieStore = await cookies()
   const sessionCookie = cookieStore.get("discord_session")
@@ -44,10 +45,55 @@ async function verifyGuildPermission(guildId: string): Promise<boolean> {
 
   try {
     const session = JSON.parse(sessionCookie.value)
-    const userGuilds = session.guilds || []
     
-    // Check if user has manage permission for this guild
-    const guild = userGuilds.find((g: { id: string }) => g.id === guildId)
+    // Master admins can manage all guilds
+    if (session.isAdmin === true) {
+      return true
+    }
+    
+    const accessToken = session.accessToken
+    if (!accessToken) {
+      return false
+    }
+    
+    // Check if user is in this guild (from stored guildIds or guilds array)
+    const userGuildIds = session.guildIds || (session.guilds?.map((g: { id: string }) => g.id) || [])
+    if (!userGuildIds.includes(guildId)) {
+      return false
+    }
+    
+    // Fetch current member data to get fresh permissions
+    const memberResponse = await fetch(
+      `https://discord.com/api/users/@me/guilds/${guildId}/member`,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      }
+    )
+    
+    if (!memberResponse.ok) {
+      return false
+    }
+    
+    // For guild member endpoint, we need to fetch guild info separately for permissions
+    // Actually, the guilds endpoint gives us permissions, so let's use that
+    const guildsResponse = await fetch(
+      `https://discord.com/api/users/@me/guilds`,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      }
+    )
+    
+    if (!guildsResponse.ok) {
+      return false
+    }
+    
+    const guilds = await guildsResponse.json()
+    const guild = guilds.find((g: { id: string }) => g.id === guildId)
+    
     if (!guild) {
       return false
     }
@@ -58,8 +104,7 @@ async function verifyGuildPermission(guildId: string): Promise<boolean> {
     const ADMINISTRATOR = BigInt(0x8)
     
     return (permissions & MANAGE_GUILD) === MANAGE_GUILD || 
-           (permissions & ADMINISTRATOR) === ADMINISTRATOR ||
-           session.isAdmin === true
+           (permissions & ADMINISTRATOR) === ADMINISTRATOR
   } catch {
     return false
   }

@@ -144,27 +144,18 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // SIMPLIFIED SESSION: Only store essential auth data
-    // Guild roles will be fetched dynamically when needed (in admin-guilds endpoint)
-    // This keeps the cookie small and always uses fresh role data
+    // MINIMAL SESSION: Only store essential auth data
+    // Guild list will be fetched dynamically using the access token
+    // This keeps the cookie well under the 4KB limit
     const sessionData = {
       user: {
         id: user.id,
         username: user.username,
-        discriminator: user.discriminator,
         avatar: user.avatar,
-        email: user.email,
         globalName: user.global_name,
       },
-      // Store minimal guild info (just IDs and names for display)
-      // NO memberRoles - these will be fetched dynamically
-      guilds: guilds.map((g) => ({
-        id: g.id,
-        name: g.name,
-        icon: g.icon,
-        owner: g.owner,
-        permissions: g.permissions,
-      })),
+      // Only store guild IDs - names/icons can be fetched when needed
+      guildIds: guilds.map((g) => g.id),
       accessToken: tokens.access_token,
       refreshToken: tokens.refresh_token,
       expiresAt: Date.now() + tokens.expires_in * 1000,
@@ -173,7 +164,12 @@ export async function GET(request: NextRequest) {
 
     const finalSessionJson = JSON.stringify(sessionData)
     const sessionSizeKB = finalSessionJson.length / 1024
-    console.log("[v0] Session size:", finalSessionJson.length, "bytes (", sessionSizeKB.toFixed(2), "KB), guilds:", guilds.length, "isAdmin:", isAdmin)
+    console.log("[v0] Session size:", finalSessionJson.length, "bytes (", sessionSizeKB.toFixed(2), "KB), guildIds:", guilds.length, "isAdmin:", isAdmin)
+    
+    // Final safety check - if STILL too large, something is wrong
+    if (sessionSizeKB > 3.5) {
+      console.error("[v0] WARNING: Session still too large at", sessionSizeKB.toFixed(2), "KB")
+    }
 
     // Always use secure in production (Vercel sets NODE_ENV=production)
     const isProduction = NEXTAUTH_URL.startsWith("https://")

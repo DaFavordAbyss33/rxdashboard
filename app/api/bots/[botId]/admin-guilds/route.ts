@@ -54,8 +54,11 @@ export async function GET(
     }
 
     const userId = session.user?.id
-    const userGuilds = session.guilds || []
+    // Support both old format (guilds array) and new format (guildIds array)
+    const userGuildIds: string[] = session.guildIds || (session.guilds?.map((g: { id: string }) => g.id) || [])
     const accessToken = session.accessToken
+
+    console.log("[v0] admin-guilds: userId:", userId, "guildIds count:", userGuildIds.length, "hasAccessToken:", !!accessToken)
 
     if (!userId) {
       return NextResponse.json(
@@ -76,6 +79,7 @@ export async function GET(
     
     if (!db) {
       // No database configured for this bot - return empty list
+      console.log("[v0] admin-guilds: No database for bot", botId)
       return NextResponse.json({
         success: true,
         adminGuildIds: [],
@@ -83,17 +87,16 @@ export async function GET(
       })
     }
 
-    // Get user's guild IDs from the session
-    const userGuildIds = userGuilds.map((g: { id: string }) => g.id)
-
     // Master user: return both permissioned guilds AND all guilds separately
     if (isMasterUser(userId)) {
+      console.log("[v0] admin-guilds: Master user detected")
       // Get all guild configs (for all guilds list)
       const allGuildConfigs = await db.collection("mapleguildconfigs")
         .find({})
         .toArray()
       
       const allGuildIds = allGuildConfigs.map(config => config.guildId)
+      console.log("[v0] admin-guilds: Found", allGuildConfigs.length, "total guild configs")
       
       // Find guild configs where user is in the guild AND has admin roles configured
       const userGuildConfigs = allGuildConfigs.filter(config => 
@@ -123,12 +126,16 @@ export async function GET(
     }
 
     // Find all guild configs for guilds the user is in that have admin roles configured
+    console.log("[v0] admin-guilds: Searching for guild configs with userGuildIds:", userGuildIds.slice(0, 5), "... (", userGuildIds.length, "total)")
     const guildConfigs = await db.collection("mapleguildconfigs")
       .find({
         guildId: { $in: userGuildIds },
         adminRoleIds: { $exists: true, $ne: [] }
       })
       .toArray()
+
+    console.log("[v0] admin-guilds: Found", guildConfigs.length, "guild configs with admin roles for user's guilds")
+    guildConfigs.forEach(c => console.log("[v0] admin-guilds: Config for guild", c.guildId, "adminRoleIds:", c.adminRoleIds))
 
     // For each guild with admin roles, fetch user's current roles and check access
     const adminGuildIds: string[] = []
