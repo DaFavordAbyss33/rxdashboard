@@ -63,7 +63,7 @@ interface BotDetailPageProps {
 
 export default function BotDetailPage({ params }: BotDetailPageProps) {
   const { botId } = use(params)
-  const { managableGuilds } = useAuth()
+  const { managableGuilds, user } = useAuth()
   const [searchQuery, setSearchQuery] = useState("")
 
   // Fetch bot data from API
@@ -80,17 +80,60 @@ export default function BotDetailPage({ params }: BotDetailPageProps) {
     { refreshInterval: 60000 }
   )
 
+  // Fetch guilds where user has admin role for this bot (not just Discord permissions)
+  const { data: adminGuildsData } = useSWR(
+    user ? `/api/bots/${botId}/admin-guilds` : null,
+    fetcher,
+    { refreshInterval: 60000 }
+  )
+
   const bot = botsData?.bots?.find((b: Bot) => b.id === botId) as Bot | undefined
   const installedGuildIds = new Set(
     (guildsData?.guilds || []).map((g: BotGuild) => g.id)
   )
 
-  // Separate user's manageable guilds into installed and not installed
+  // Get the list of guild IDs where user has bot-specific admin role
+  const adminRoleGuildIds = new Set<string>(adminGuildsData?.adminGuildIds || [])
+
+  // Combine: user can access guilds they manage via Discord permissions OR have bot admin role
   const { installedGuilds, notInstalledGuilds } = useMemo(() => {
-    const installed = managableGuilds.filter((guild) => installedGuildIds.has(guild.id))
-    const notInstalled = managableGuilds.filter((guild) => !installedGuildIds.has(guild.id))
+    // Get bot guild data to merge with user's guilds
+    const botGuilds = guildsData?.guilds || []
+    
+    // Create a map of installed guilds from bot data
+    const botGuildMap = new Map<string, BotGuild>()
+    for (const g of botGuilds) {
+      botGuildMap.set(g.id, g)
+    }
+
+    // Start with manageable guilds (Discord perms)
+    const accessibleGuildsMap = new Map<string, typeof managableGuilds[0]>()
+    for (const guild of managableGuilds) {
+      accessibleGuildsMap.set(guild.id, guild)
+    }
+
+    // Add guilds where user has bot admin role (from installed bot guilds)
+    for (const guildId of adminRoleGuildIds) {
+      if (!accessibleGuildsMap.has(guildId) && botGuildMap.has(guildId)) {
+        const botGuild = botGuildMap.get(guildId)!
+        // Create a guild entry for admin role access
+        accessibleGuildsMap.set(guildId, {
+          id: guildId,
+          name: botGuild.name,
+          icon: botGuild.icon,
+          memberCount: undefined,
+          owner: false,
+          permissions: "0", // No Discord perms, but has bot admin role
+          hasAdminRole: true, // Flag to indicate access is via admin role
+        } as typeof managableGuilds[0] & { hasAdminRole?: boolean })
+      }
+    }
+
+    const allAccessibleGuilds = Array.from(accessibleGuildsMap.values())
+    const installed = allAccessibleGuilds.filter((guild) => installedGuildIds.has(guild.id))
+    const notInstalled = allAccessibleGuilds.filter((guild) => !installedGuildIds.has(guild.id))
     return { installedGuilds: installed, notInstalledGuilds: notInstalled }
-  }, [managableGuilds, installedGuildIds])
+  }, [managableGuilds, installedGuildIds, adminRoleGuildIds, guildsData?.guilds])
 
   // Filter by search
   const filterGuilds = (guilds: typeof managableGuilds) =>
@@ -288,6 +331,7 @@ export default function BotDetailPage({ params }: BotDetailPageProps) {
                       isOwner={guild.owner}
                       isInstalled
                       botId={botId}
+                      hasAdminRole={(guild as typeof guild & { hasAdminRole?: boolean }).hasAdminRole}
                     />
                   ))
                 )}
@@ -317,6 +361,7 @@ export default function BotDetailPage({ params }: BotDetailPageProps) {
                       isInstalled={false}
                       botId={botId}
                       inviteUrl={generateBotInviteUrl(bot, guild.id) || undefined}
+                      hasAdminRole={(guild as typeof guild & { hasAdminRole?: boolean }).hasAdminRole}
                     />
                   ))
                 )}
@@ -337,6 +382,7 @@ interface GuildRowProps {
   isInstalled: boolean
   botId: string
   inviteUrl?: string
+  hasAdminRole?: boolean
 }
 
 function GuildRow({
@@ -347,6 +393,7 @@ function GuildRow({
   isInstalled,
   botId,
   inviteUrl,
+  hasAdminRole,
 }: GuildRowProps) {
   return (
     <div className="flex items-center justify-between rounded-lg border border-border bg-secondary/30 p-4 transition-colors hover:bg-secondary/50">
@@ -360,6 +407,11 @@ function GuildRow({
             {isOwner && (
               <Badge variant="outline" className="text-xs">
                 Owner
+              </Badge>
+            )}
+            {!isOwner && hasAdminRole && (
+              <Badge variant="secondary" className="text-xs">
+                Admin Role
               </Badge>
             )}
           </div>

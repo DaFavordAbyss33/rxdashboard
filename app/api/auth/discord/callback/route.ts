@@ -114,33 +114,27 @@ export async function GET(request: NextRequest) {
       guilds = await guildsResponse.json()
     }
 
-    // Fetch member roles for manageable guilds (owner or has manage permission)
-    const MANAGE_GUILD = BigInt(0x20)
-    const ADMINISTRATOR = BigInt(0x8)
-    
+    // Fetch member roles for ALL guilds (needed for bot admin role checks)
+    // This allows users with bot-configured admin roles to access guild management
+    // even if they don't have Discord's Manage Server permission
     const guildsWithRoles: GuildWithRoles[] = await Promise.all(
       guilds.map(async (guild) => {
-        const permInt = BigInt(guild.permissions)
-        const canManage = guild.owner || (permInt & MANAGE_GUILD) === MANAGE_GUILD || (permInt & ADMINISTRATOR) === ADMINISTRATOR
-        
-        if (canManage) {
-          try {
-            const memberResponse = await fetch(
-              `https://discord.com/api/users/@me/guilds/${guild.id}/member`,
-              {
-                headers: {
-                  Authorization: `Bearer ${tokens.access_token}`,
-                },
-              }
-            )
-
-            if (memberResponse.ok) {
-              const member: GuildMember = await memberResponse.json()
-              return { ...guild, memberRoles: member.roles }
+        try {
+          const memberResponse = await fetch(
+            `https://discord.com/api/users/@me/guilds/${guild.id}/member`,
+            {
+              headers: {
+                Authorization: `Bearer ${tokens.access_token}`,
+              },
             }
-          } catch (err) {
-            console.error(`Failed to fetch member roles for guild ${guild.id}:`, err)
+          )
+
+          if (memberResponse.ok) {
+            const member: GuildMember = await memberResponse.json()
+            return { ...guild, memberRoles: member.roles }
           }
+        } catch (err) {
+          console.error(`Failed to fetch member roles for guild ${guild.id}:`, err)
         }
         return guild
       })

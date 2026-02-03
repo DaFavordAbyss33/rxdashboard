@@ -1,6 +1,6 @@
 "use client"
 
-import { use, useState, useEffect } from "react"
+import { use, useState, useEffect, useMemo } from "react"
 import { notFound } from "next/navigation"
 import Link from "next/link"
 import useSWR from "swr"
@@ -82,6 +82,18 @@ export default function GuildConfigPage({ params }: GuildConfigPageProps) {
 
   // Fetch bot data
   const { data: botsData, isLoading: botsLoading } = useSWR("/api/bots", fetcher)
+
+  // Fetch guilds the bot is installed in (to get guild info for admin role users)
+  const { data: botGuildsData } = useSWR(
+    `/api/bots/${botId}/guilds`,
+    fetcher
+  )
+
+  // Fetch guilds where user has admin role for this bot
+  const { data: adminGuildsData } = useSWR(
+    user ? `/api/bots/${botId}/admin-guilds` : null,
+    fetcher
+  )
   
   // Fetch config for this bot+guild
   const { 
@@ -94,7 +106,34 @@ export default function GuildConfigPage({ params }: GuildConfigPageProps) {
   )
 
   const bot = botsData?.bots?.find((b: Bot) => b.id === botId) as Bot | undefined
-  const guild = managableGuilds.find((g) => g.id === guildId)
+  
+  // Check if user has admin role access for this guild
+  const adminRoleGuildIds = new Set<string>(adminGuildsData?.adminGuildIds || [])
+  const hasAdminRoleAccess = adminRoleGuildIds.has(guildId)
+
+  // Get guild from manageable guilds OR from bot guilds if user has admin role
+  const guild = useMemo(() => {
+    // First check manageable guilds (Discord permissions)
+    const managedGuild = managableGuilds.find((g) => g.id === guildId)
+    if (managedGuild) return managedGuild
+
+    // If user has admin role access, create guild info from bot guild data
+    if (hasAdminRoleAccess && botGuildsData?.guilds) {
+      const botGuild = botGuildsData.guilds.find((g: { id: string; name: string; icon: string | null }) => g.id === guildId)
+      if (botGuild) {
+        return {
+          id: guildId,
+          name: botGuild.name,
+          icon: botGuild.icon,
+          owner: false,
+          permissions: "0",
+          memberRoles: [], // Will be populated from session if available
+        }
+      }
+    }
+
+    return undefined
+  }, [managableGuilds, guildId, hasAdminRoleAccess, botGuildsData?.guilds])
 
   // Initialize config from API response
   useEffect(() => {
@@ -199,13 +238,14 @@ export default function GuildConfigPage({ params }: GuildConfigPageProps) {
   // Setup tab: Discord server owner OR has "Manage Server" permission
   const canAccessSetup = guild.owner || hasManageGuildPermission(guild.permissions)
   
-  // General tab: Discord server owner OR has one of the Admin roles from setup config
+  // General tab: Discord server owner OR has one of the Admin roles from setup config OR has bot admin role access
   const adminRoleIds = Array.isArray(config["adminRoleIds"]) 
     ? (config["adminRoleIds"] as string[]) 
     : []
   const userRoles = guild.memberRoles || []
   const hasAdminRole = adminRoleIds.some(roleId => userRoles.includes(roleId))
-  const canAccessGeneral = guild.owner || hasAdminRole
+  // hasAdminRoleAccess is computed from the API response - user has one of the configured admin roles
+  const canAccessGeneral = guild.owner || hasAdminRole || hasAdminRoleAccess
   
   // Determine default tab based on permissions
   const getDefaultTab = () => {
