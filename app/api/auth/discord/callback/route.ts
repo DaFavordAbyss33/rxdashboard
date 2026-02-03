@@ -182,17 +182,11 @@ export async function GET(request: NextRequest) {
 
     // Store session in HTTP-only cookie using Response headers (more reliable)
     // CRITICAL: Cookies have a ~4KB size limit. Browsers SILENTLY REJECT cookies over this limit.
-    // We MUST keep the session extremely small - store only essential auth data.
-    // Guild data can be fetched separately using the access token.
+    // We keep ALL guilds since bot admin roles need to be checked against memberRoles.
+    // We reduce size by minimizing the data stored per guild.
     
-    const MANAGE_GUILD = 0x20
-    const ADMINISTRATOR = 0x8
-    
-    // Only keep guilds where user has manage permissions (drastically reduces size)
-    const manageableGuilds = sessionData.guilds.filter((g: { id: string; name: string; icon: string | null; owner: boolean; permissions: string; memberRoles: string[] }) => {
-      const perms = parseInt(g.permissions)
-      return g.owner || (perms & ADMINISTRATOR) !== 0 || (perms & MANAGE_GUILD) !== 0
-    }).map((g: { id: string; name: string; icon: string | null; owner: boolean; permissions: string; memberRoles: string[] }) => ({
+    // Create minimal guild data - keep memberRoles since they're needed for bot admin role checks
+    const minimalGuilds = sessionData.guilds.map((g: { id: string; name: string; icon: string | null; owner: boolean; permissions: string; memberRoles: string[] }) => ({
       id: g.id,
       name: g.name,
       icon: g.icon,
@@ -201,17 +195,17 @@ export async function GET(request: NextRequest) {
       memberRoles: g.memberRoles,
     }))
     
-    // Create minimal session with only manageable guilds
+    // Create session with all guilds
     let minimalSessionData: {
       user: typeof sessionData.user;
-      guilds: typeof manageableGuilds;
+      guilds: typeof minimalGuilds;
       accessToken: string;
       refreshToken: string;
       expiresAt: number;
       isAdmin: boolean;
     } = {
       user: sessionData.user,
-      guilds: manageableGuilds,
+      guilds: minimalGuilds,
       accessToken: sessionData.accessToken,
       refreshToken: sessionData.refreshToken,
       expiresAt: sessionData.expiresAt,
@@ -220,24 +214,57 @@ export async function GET(request: NextRequest) {
     
     let finalSessionJson = JSON.stringify(minimalSessionData)
     let sessionSizeKB = finalSessionJson.length / 1024
-    console.log("[v0] Session with manageable guilds:", finalSessionJson.length, "bytes (", sessionSizeKB.toFixed(2), "KB), guilds:", manageableGuilds.length)
+    console.log("[v0] Initial session size:", finalSessionJson.length, "bytes (", sessionSizeKB.toFixed(2), "KB), guilds:", minimalGuilds.length)
     
-    // If STILL too large, strip memberRoles from all guilds
+    // If too large, progressively reduce size while keeping essential data
+    // Step 1: Remove icons from guilds (they can be fetched separately)
     if (sessionSizeKB > 3.5) {
-      console.log("[v0] Still too large, stripping all memberRoles")
+      console.log("[v0] Too large, removing guild icons")
       minimalSessionData = {
         ...minimalSessionData,
-        guilds: manageableGuilds.map(g => ({
+        guilds: minimalGuilds.map(g => ({
           ...g,
-          memberRoles: [], // Remove all roles to save space
+          icon: null, // Remove icons to save space
         })),
       }
       finalSessionJson = JSON.stringify(minimalSessionData)
       sessionSizeKB = finalSessionJson.length / 1024
-      console.log("[v0] After stripping roles:", finalSessionJson.length, "bytes (", sessionSizeKB.toFixed(2), "KB)")
+      console.log("[v0] After removing icons:", finalSessionJson.length, "bytes (", sessionSizeKB.toFixed(2), "KB)")
     }
     
-    // If STILL too large, remove guilds entirely (user can still auth, just won't see guilds in session)
+    // Step 2: Truncate guild names
+    if (sessionSizeKB > 3.5) {
+      console.log("[v0] Still too large, truncating guild names")
+      minimalSessionData = {
+        ...minimalSessionData,
+        guilds: minimalSessionData.guilds.map(g => ({
+          ...g,
+          name: g.name.substring(0, 20), // Truncate long names
+        })),
+      }
+      finalSessionJson = JSON.stringify(minimalSessionData)
+      sessionSizeKB = finalSessionJson.length / 1024
+      console.log("[v0] After truncating names:", finalSessionJson.length, "bytes (", sessionSizeKB.toFixed(2), "KB)")
+    }
+    
+    // Step 3: If STILL too large, limit number of guilds but keep those with roles
+    if (sessionSizeKB > 3.5) {
+      console.log("[v0] Still too large, limiting guild count")
+      // Prioritize guilds where user has roles (more likely to have bot admin roles)
+      const guildsWithRoles = minimalSessionData.guilds.filter(g => g.memberRoles.length > 0)
+      const guildsWithoutRoles = minimalSessionData.guilds.filter(g => g.memberRoles.length === 0)
+      // Keep all guilds with roles, plus first 20 without roles
+      const limitedGuilds = [...guildsWithRoles, ...guildsWithoutRoles.slice(0, 20)]
+      minimalSessionData = {
+        ...minimalSessionData,
+        guilds: limitedGuilds,
+      }
+      finalSessionJson = JSON.stringify(minimalSessionData)
+      sessionSizeKB = finalSessionJson.length / 1024
+      console.log("[v0] After limiting guilds:", finalSessionJson.length, "bytes (", sessionSizeKB.toFixed(2), "KB), kept:", limitedGuilds.length)
+    }
+    
+    // Step 4: Last resort - remove guilds entirely
     if (sessionSizeKB > 3.5) {
       console.log("[v0] STILL too large, removing all guilds from session")
       minimalSessionData = {
