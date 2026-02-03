@@ -76,7 +76,7 @@ interface GuildConfigPageProps {
 
 export default function GuildConfigPage({ params }: GuildConfigPageProps) {
   const { botId, guildId } = use(params)
-  const { managableGuilds, user } = useAuth()
+  const { managableGuilds, user, guildsLoading, isLoading: authLoading } = useAuth()
   const [isSaving, setIsSaving] = useState(false)
   const [config, setConfig] = useState<Record<string, unknown>>({})
 
@@ -143,8 +143,14 @@ export default function GuildConfigPage({ params }: GuildConfigPageProps) {
     }
   }, [configData])
 
-  // Loading state
-  if (botsLoading || configLoading) {
+  // Loading state - wait for auth, guilds, bots and config data
+  const isDataLoading = botsLoading || configLoading || authLoading || guildsLoading
+  
+  // Also wait for adminGuildsData to load (if user is authenticated)
+  const adminGuildsLoading = user && !adminGuildsData
+  const botGuildsLoading = !botGuildsData
+  
+  if (isDataLoading || adminGuildsLoading || botGuildsLoading) {
     return (
       <div className="space-y-6">
         <Skeleton className="h-6 w-32" />

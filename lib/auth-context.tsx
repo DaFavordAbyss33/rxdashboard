@@ -1,6 +1,6 @@
 "use client"
 
-import { createContext, useContext, useState, useEffect, type ReactNode } from "react"
+import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react"
 import type { DiscordUser, Guild } from "./types"
 import { hasManageGuildPermission } from "./data"
 
@@ -23,32 +23,102 @@ interface AuthContextType {
   logout: () => void
   managableGuilds: Guild[]
   refreshSession: () => Promise<void>
+  refreshGuilds: () => Promise<void>
+  guildsLoading: boolean
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
+
+// Cache key for guilds in sessionStorage
+const GUILDS_CACHE_KEY = "discord_guilds_cache"
+const GUILDS_CACHE_TTL = 5 * 60 * 1000 // 5 minutes
+
+function getCachedGuilds(): SessionGuild[] | null {
+  if (typeof window === "undefined") return null
+  try {
+    const cached = sessionStorage.getItem(GUILDS_CACHE_KEY)
+    if (!cached) return null
+    const { guilds, timestamp } = JSON.parse(cached)
+    // Check if cache is still valid
+    if (Date.now() - timestamp > GUILDS_CACHE_TTL) {
+      sessionStorage.removeItem(GUILDS_CACHE_KEY)
+      return null
+    }
+    return guilds
+  } catch {
+    return null
+  }
+}
+
+function setCachedGuilds(guilds: SessionGuild[]) {
+  if (typeof window === "undefined") return
+  try {
+    sessionStorage.setItem(GUILDS_CACHE_KEY, JSON.stringify({
+      guilds,
+      timestamp: Date.now(),
+    }))
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+function clearCachedGuilds() {
+  if (typeof window === "undefined") return
+  try {
+    sessionStorage.removeItem(GUILDS_CACHE_KEY)
+  } catch {
+    // Ignore storage errors
+  }
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<DiscordUser | null>(null)
   const [guilds, setGuilds] = useState<SessionGuild[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [guildsLoading, setGuildsLoading] = useState(true) // Start true until session check completes
   const [isAdmin, setIsAdmin] = useState(false)
   const [isAdminLoading, setIsAdminLoading] = useState(true)
+
+  // Fetch guilds from Discord API (separate from session)
+  const fetchGuilds = useCallback(async (forceRefresh = false) => {
+    // Check cache first unless force refresh
+    if (!forceRefresh) {
+      const cached = getCachedGuilds()
+      if (cached) {
+        setGuilds(cached)
+        return
+      }
+    }
+
+    setGuildsLoading(true)
+    try {
+      const response = await fetch("/api/auth/guilds")
+      const data = await response.json()
+
+      if (data.success && data.guilds) {
+        setGuilds(data.guilds)
+        setCachedGuilds(data.guilds)
+      }
+    } catch (error) {
+      console.error("Failed to fetch guilds:", error)
+    } finally {
+      setGuildsLoading(false)
+    }
+  }, [])
 
   const fetchSession = async () => {
     try {
       const response = await fetch("/api/auth/session")
       const data = await response.json()
 
-      console.log("[v0] Client received session data:", data)
-
       if (data.isAuthenticated && data.user) {
         // Double-check on client side for mock data
         if (data.user.username === "BotAdmin" || data.user.id === "123456789012345678") {
-          console.log("[v0] Client detected mock data, clearing session")
           await fetch("/api/auth/session", { method: "DELETE" })
           setUser(null)
           setGuilds([])
           setIsAdmin(false)
+          clearCachedGuilds()
           return
         }
 
@@ -59,21 +129,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           discriminator: data.user.discriminator,
           avatar: data.user.avatar,
           email: data.user.email,
-          guilds: data.guilds || [],
+          guilds: [],
         }
         setUser(discordUser)
-        setGuilds(data.guilds || [])
         setIsAdmin(data.isAdmin === true)
+        
+        // Fetch guilds separately (with caching)
+        await fetchGuilds()
       } else {
         setUser(null)
         setGuilds([])
         setIsAdmin(false)
+        setGuildsLoading(false) // No user, no guilds to load
+        clearCachedGuilds()
       }
     } catch (error) {
       console.error("Failed to fetch session:", error)
       setUser(null)
       setGuilds([])
       setIsAdmin(false)
+      setGuildsLoading(false)
+      clearCachedGuilds()
     } finally {
       setIsLoading(false)
       setIsAdminLoading(false)
@@ -112,6 +188,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null)
     setGuilds([])
     setIsAdmin(false)
+    clearCachedGuilds()
     window.location.href = "/"
   }
 
@@ -119,6 +196,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsLoading(true)
     setIsAdminLoading(true)
     await fetchSession()
+  }
+
+  const refreshGuilds = async () => {
+    await fetchGuilds(true) // Force refresh
   }
 
   // Filter guilds where user has manage permissions
@@ -138,6 +219,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         logout,
         managableGuilds,
         refreshSession,
+        refreshGuilds,
+        guildsLoading,
       }}
     >
       {children}
