@@ -110,70 +110,144 @@ export async function GET(
 
     // Master user: return both permissioned guilds AND all guilds separately
     if (isMasterUser(userId)) {
-      // Get all guild configs (for all guilds list)
-      // Note: configs collection stores guild configs with adminRoleIds field
-      const allGuildConfigs = await db.collection("configs")
-        .find({})
-        .toArray()
+      // Get all guild configs from both collections
+      const dashboardConfigs = await db.collection("configs").find({}).toArray()
+      const botGuildConfigs = await db.collection("guilds").find({}).toArray()
       
-      const allGuildIds = allGuildConfigs.map(config => config.guildId)
+      // Collect all guild IDs from both sources
+      const allGuildIdsSet = new Set<string>()
+      dashboardConfigs.forEach(c => c.guildId && allGuildIdsSet.add(c.guildId))
+      botGuildConfigs.forEach(c => {
+        const gId = c.guildId || c._id?.toString()
+        if (gId) allGuildIdsSet.add(gId)
+      })
+      const allGuildIds = Array.from(allGuildIdsSet)
       
-      // Find guild configs where user is in the guild AND has admin roles configured
-      // adminRoleIds is stored inside config object
-      const userGuildConfigs = allGuildConfigs.filter(config => 
-        userGuildIds.includes(config.guildId) && 
-        config.config?.adminRoleIds && 
-        config.config.adminRoleIds.length > 0
-      )
+      // Build admin roles map for guilds user is in
+      const guildAdminRolesMap = new Map<string, string[]>()
       
-      // Fetch roles dynamically and check which guilds user has admin role in
-      const adminRoleGuildIds: string[] = []
-      for (const configDoc of userGuildConfigs) {
-        const adminRoleIds = configDoc.config?.adminRoleIds || []
-        const userRoles = await fetchMemberRoles(accessToken, configDoc.guildId)
+      // From dashboard configs
+      for (const config of dashboardConfigs) {
+        if (!userGuildIds.includes(config.guildId)) continue
+        const adminRoles = config.config?.adminRoleIds || []
+        if (adminRoles.length > 0) {
+          guildAdminRolesMap.set(config.guildId, adminRoles)
+        }
+      }
+      
+      // From bot configs
+      for (const config of botGuildConfigs) {
+        const guildId = config.guildId || config._id?.toString()
+        if (!guildId || !userGuildIds.includes(guildId)) continue
         
+        const adminRoles: string[] = []
+        if (config.adminRole) adminRoles.push(config.adminRole)
+        if (config.adminRoleId) adminRoles.push(config.adminRoleId)
+        if (Array.isArray(config.adminRoleIds)) adminRoles.push(...config.adminRoleIds)
+        
+        if (adminRoles.length > 0) {
+          const existing = guildAdminRolesMap.get(guildId) || []
+          guildAdminRolesMap.set(guildId, [...new Set([...existing, ...adminRoles])])
+        }
+      }
+      
+      // Check which guilds user has admin role in
+      const adminRoleGuildIds: string[] = []
+      for (const [guildId, adminRoleIds] of guildAdminRolesMap) {
+        const userRoles = await fetchMemberRoles(accessToken, guildId)
         const hasAdminRole = adminRoleIds.some((roleId: string) => userRoles.includes(roleId))
         if (hasAdminRole) {
-          adminRoleGuildIds.push(configDoc.guildId)
+          adminRoleGuildIds.push(guildId)
         }
       }
       
       return NextResponse.json({
         success: true,
-        adminGuildIds: adminRoleGuildIds, // Guilds where master has admin role
-        allGuildIds, // All installed guilds (for "Show all" feature)
+        adminGuildIds: adminRoleGuildIds,
+        allGuildIds,
         isMaster: true,
       })
     }
 
-    // Find all guild configs for guilds the user is in that have admin roles configured
-    // Note: adminRoleIds is stored inside config.adminRoleIds in the configs collection
-    const guildConfigs = await db.collection("configs")
+    // Check BOTH collections:
+    // 1. "configs" collection - used by dashboard (adminRoleIds inside config object)
+    // 2. "guilds" collection - used by bot setup (adminRole or adminRoleIds at root level)
+    
+    // Get configs from dashboard-style collection
+    const dashboardConfigs = await db.collection("configs")
       .find({
         guildId: { $in: userGuildIds },
         "config.adminRoleIds": { $exists: true, $ne: [] }
       })
       .toArray()
     
-    console.log("[v0] admin-guilds: Found", guildConfigs.length, "guild configs with admin roles for user's guilds")
-    guildConfigs.forEach(c => {
-      // adminRoleIds is stored inside config object
-      const adminRoleIds = c.config?.adminRoleIds || []
-      console.log("[v0] admin-guilds: Guild", c.guildId, "has adminRoleIds:", adminRoleIds)
+    // Get configs from bot-style collection (guilds collection)
+    // Bot might store as adminRole (string) or adminRoleIds (array) or adminRoleId (string)
+    const botConfigs = await db.collection("guilds")
+      .find({
+        $or: [
+          { guildId: { $in: userGuildIds }, adminRole: { $exists: true, $ne: null } },
+          { guildId: { $in: userGuildIds }, adminRoleId: { $exists: true, $ne: null } },
+          { guildId: { $in: userGuildIds }, adminRoleIds: { $exists: true, $ne: [] } },
+          { _id: { $in: userGuildIds }, adminRole: { $exists: true, $ne: null } },
+          { _id: { $in: userGuildIds }, adminRoleId: { $exists: true, $ne: null } },
+          { _id: { $in: userGuildIds }, adminRoleIds: { $exists: true, $ne: [] } },
+        ]
+      })
+      .toArray()
+    
+    console.log("[v0] admin-guilds: Found", dashboardConfigs.length, "dashboard configs,", botConfigs.length, "bot configs")
+    
+    // Log what we found for debugging
+    dashboardConfigs.forEach(c => {
+      console.log("[v0] admin-guilds: Dashboard config for guild", c.guildId, "- adminRoleIds:", c.config?.adminRoleIds)
     })
+    botConfigs.forEach(c => {
+      const gId = c.guildId || c._id
+      console.log("[v0] admin-guilds: Bot config for guild", gId, "- adminRole:", c.adminRole, "adminRoleId:", c.adminRoleId, "adminRoleIds:", c.adminRoleIds)
+    })
+
+    // Build a map of guildId -> adminRoleIds (combining both sources)
+    const guildAdminRolesMap = new Map<string, string[]>()
+    
+    // Add dashboard configs
+    for (const config of dashboardConfigs) {
+      const adminRoles = config.config?.adminRoleIds || []
+      if (adminRoles.length > 0) {
+        guildAdminRolesMap.set(config.guildId, adminRoles)
+      }
+    }
+    
+    // Add bot configs (might override or add to dashboard configs)
+    for (const config of botConfigs) {
+      const guildId = config.guildId || config._id?.toString()
+      if (!guildId) continue
+      
+      // Collect all possible admin role fields
+      const adminRoles: string[] = []
+      if (config.adminRole) adminRoles.push(config.adminRole)
+      if (config.adminRoleId) adminRoles.push(config.adminRoleId)
+      if (Array.isArray(config.adminRoleIds)) adminRoles.push(...config.adminRoleIds)
+      
+      if (adminRoles.length > 0) {
+        // Merge with existing if any
+        const existing = guildAdminRolesMap.get(guildId) || []
+        guildAdminRolesMap.set(guildId, [...new Set([...existing, ...adminRoles])])
+      }
+    }
+    
+    console.log("[v0] admin-guilds: Combined guild admin roles map has", guildAdminRolesMap.size, "guilds")
 
     // For each guild with admin roles, fetch user's current roles and check access
     const adminGuildIds: string[] = []
     
     // Fetch all roles in parallel for better performance
     const roleChecks = await Promise.all(
-      guildConfigs.map(async (configDoc) => {
-        // adminRoleIds is stored inside config object
-        const adminRoleIds = configDoc.config?.adminRoleIds || []
-        const userRoles = await fetchMemberRoles(accessToken, configDoc.guildId)
+      Array.from(guildAdminRolesMap.entries()).map(async ([guildId, adminRoleIds]) => {
+        const userRoles = await fetchMemberRoles(accessToken, guildId)
         const hasAdminRole = adminRoleIds.some((roleId: string) => userRoles.includes(roleId))
-        console.log("[v0] admin-guilds: Guild", configDoc.guildId, "- user roles:", userRoles.join(","), "| admin roles:", adminRoleIds.join(","), "| hasAdminRole:", hasAdminRole)
-        return { guildId: configDoc.guildId, hasAdminRole }
+        console.log("[v0] admin-guilds: Guild", guildId, "- user roles:", userRoles.join(","), "| admin roles:", adminRoleIds.join(","), "| hasAdminRole:", hasAdminRole)
+        return { guildId, hasAdminRole }
       })
     )
     
