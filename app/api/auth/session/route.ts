@@ -4,8 +4,11 @@ import { cookies } from "next/headers"
 export async function GET() {
   const cookieStore = await cookies()
   const sessionCookie = cookieStore.get("discord_session")
-
-  console.log("[v0] Session API called, cookie exists:", !!sessionCookie)
+  
+  // Log all available cookies for debugging
+  const allCookies = cookieStore.getAll()
+  console.log("[v0] Session API called - all cookies:", allCookies.map(c => c.name).join(", ") || "(none)")
+  console.log("[v0] Session API called, discord_session cookie exists:", !!sessionCookie, "value length:", sessionCookie?.value?.length || 0)
 
   if (!sessionCookie) {
     return NextResponse.json({ user: null, isAuthenticated: false })
