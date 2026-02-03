@@ -18,8 +18,15 @@ const BOT_METADATA: Record<string, {
   priceFrom?: string
   featureIcon: typeof Server
   longDescription: string
+  name: string
+  description: string
+  icon: string
+  isPrivate?: boolean
 }> = {
   syruprx: {
+    name: "SyrupRx",
+    description: "Maple Hospital utility and staff management bot",
+    icon: "/bots/syruprx.png",
     color: "from-rx-purple to-rx-orange",
     features: ["Shift Tracking", "Role Sync", "Staff Management", "Moderation Logs"],
     free: true,
@@ -28,6 +35,9 @@ const BOT_METADATA: Record<string, {
     longDescription: "The ultimate utility and staff management bot for Maple Hospital servers. Track shifts, manage roles, and keep your staff organized.",
   },
   "syruprx-pro": {
+    name: "SyrupRx PRO",
+    description: "Premium features and advanced analytics",
+    icon: "/bots/syruprx-pro.png",
     color: "from-rx-purple to-rx-orange",
     features: ["Advanced Analytics", "Custom Branding", "Priority Support", "Unlimited Commands"],
     free: false,
@@ -37,6 +47,9 @@ const BOT_METADATA: Record<string, {
     longDescription: "Premium features and advanced analytics for power users. Custom branding, detailed reports, and priority support.",
   },
   autoclockrx: {
+    name: "AutoclockRx",
+    description: "Automatic shift logging with MarizmaAPI",
+    icon: "/bots/autoclockrx.png",
     color: "from-blue-500 to-cyan-500",
     features: ["Auto Clock-In/Out", "Payroll Export", "Activity Monitor", "Shift Schedules"],
     free: false,
@@ -46,6 +59,9 @@ const BOT_METADATA: Record<string, {
     longDescription: "Automatic shift logging with MarizmaAPI integration. Export payroll data, monitor activity, and manage schedules effortlessly.",
   },
   mednoterx: {
+    name: "MedNoteRx",
+    description: "Discord patient charting and medical documentation",
+    icon: "/bots/mednoterx.png",
     color: "from-emerald-500 to-teal-500",
     features: ["Patient Charting", "Medical Templates", "Export to PDF", "Multi-Department"],
     free: false,
@@ -55,23 +71,41 @@ const BOT_METADATA: Record<string, {
     longDescription: "Discord-native patient charting and medical documentation. Perfect for healthcare roleplay communities and training servers.",
   },
   swissrx: {
+    name: "SwissRx",
+    description: "LOA and session management system",
+    icon: "/bots/swissrx.png",
     color: "from-red-500 to-rose-500",
     features: ["LOA Management", "Session Calendar", "Staff Tracking", "Google Sheets Sync"],
     free: true,
     hasPremium: false,
     featureIcon: Activity,
     longDescription: "LOA management and session scheduling system. Track leaves of absence and organize training sessions with ease.",
+    isPrivate: true,
   },
 }
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json())
+
+// Fallback bot list when API is unavailable
+const FALLBACK_BOTS = Object.entries(BOT_METADATA).map(([id, meta]) => ({
+  id,
+  name: meta.name,
+  description: meta.description,
+  icon: meta.icon,
+  clientId: "", // Will use invite links without client ID check
+  status: "offline" as const,
+  guildsCount: 0,
+  isPrivate: meta.isPrivate || false,
+  hasSubscription: meta.hasPremium,
+}))
 
 export default function BotsPage() {
   const { data, error, isLoading, mutate } = useSWR("/api/bots/public", fetcher, {
     refreshInterval: 60000, // Refresh every minute for public page
   })
 
-  const bots = data?.bots || []
+  // Use fetched bots if available, otherwise use fallback static data
+  const bots = data?.bots?.length > 0 ? data.bots : (error || !data ? FALLBACK_BOTS : [])
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
@@ -227,11 +261,11 @@ export default function BotsPage() {
                       </p>
                     )}
                     <div className="flex w-full gap-2">
-                      {bot.isPrivate ? (
+                      {bot.isPrivate || metadata.isPrivate ? (
                         <Button disabled className="flex-1" variant="outline">
                           Private Bot
                         </Button>
-                      ) : (
+                      ) : bot.clientId ? (
                         <>
                           <Button className="flex-1 gap-2" variant="outline" asChild>
                             <a
@@ -242,6 +276,22 @@ export default function BotsPage() {
                               <ExternalLink className="h-4 w-4" />
                               Add to Server
                             </a>
+                          </Button>
+                          {metadata.hasPremium && (
+                            <Link href={`/pricing#${bot.id}`}>
+                              <Button className="bg-gradient-to-r from-rx-purple to-rx-orange text-primary-foreground hover:opacity-90">
+                                Upgrade
+                              </Button>
+                            </Link>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          <Button className="flex-1 gap-2" variant="outline" asChild>
+                            <Link href="/dashboard">
+                              <ExternalLink className="h-4 w-4" />
+                              Login to Invite
+                            </Link>
                           </Button>
                           {metadata.hasPremium && (
                             <Link href={`/pricing#${bot.id}`}>
