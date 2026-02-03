@@ -5,7 +5,10 @@ export async function GET() {
   const cookieStore = await cookies()
   const sessionCookie = cookieStore.get("discord_session")
 
+  console.log("[v0] Session API - cookie exists:", !!sessionCookie, "length:", sessionCookie?.value?.length || 0)
+
   if (!sessionCookie) {
+    console.log("[v0] Session API - No cookie, returning unauthenticated")
     return NextResponse.json({ user: null, isAuthenticated: false })
   }
 
@@ -34,6 +37,7 @@ export async function GET() {
       return NextResponse.json({ user: null, isAuthenticated: false })
     }
 
+    console.log("[v0] Session API - Valid session for user:", session.user?.username, "id:", session.user?.id)
     return NextResponse.json({
       user: session.user,
       // guildIds no longer stored in session to avoid 4KB cookie limit
@@ -41,7 +45,8 @@ export async function GET() {
       isAdmin: session.isAdmin,
       isAuthenticated: true,
     })
-  } catch {
+  } catch (err) {
+    console.log("[v0] Session API - Parse error:", err)
     cookieStore.delete("discord_session")
     return NextResponse.json({ user: null, isAuthenticated: false })
   }
