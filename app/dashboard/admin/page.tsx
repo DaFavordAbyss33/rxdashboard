@@ -52,6 +52,7 @@ import {
   Radio,
   Clock,
   ImageIcon,
+  MessageSquareWarning,
 } from "lucide-react"
 import {
   DropdownMenu,
@@ -152,9 +153,21 @@ export default function AdminPage() {
   const [broadcastSubject, setBroadcastSubject] = useState("")
   const [scheduledAt, setScheduledAt] = useState("")
 
+  // Urgent DM state
+  const [urgentDmMessage, setUrgentDmMessage] = useState("")
+  const [urgentDmBot, setUrgentDmBot] = useState<string>("syruprx")
+  const [isSendingUrgentDm, setIsSendingUrgentDm] = useState(false)
+  const [urgentDmResult, setUrgentDmResult] = useState<{ type: "success" | "error"; text: string } | null>(null)
+
   // Fetch broadcasts from Resend
   const { data: broadcastsData, isLoading: broadcastsLoading, mutate: mutateBroadcasts } = useSWR(
     "/api/admin/broadcasts",
+    fetcher
+  )
+
+  // Fetch urgent DM history
+  const { data: urgentDmHistory, isLoading: urgentDmHistoryLoading, mutate: mutateUrgentDmHistory } = useSWR(
+    "/api/admin/urgent-dm",
     fetcher
   )
 
@@ -279,6 +292,42 @@ export default function AdminPage() {
       }
     } catch (error) {
       console.error("Failed to delete broadcast:", error)
+    }
+  }
+
+  // Send urgent DMs to guild owners
+  const handleSendUrgentDm = async () => {
+    if (!urgentDmMessage.trim()) return
+
+    setIsSendingUrgentDm(true)
+    setUrgentDmResult(null)
+
+    try {
+      const response = await fetch("/api/admin/urgent-dm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: urgentDmMessage,
+          botId: urgentDmBot,
+        }),
+      })
+
+      const data = await response.json()
+
+      if (response.ok && data.success) {
+        setUrgentDmResult({ 
+          type: "success", 
+          text: `${data.message}${data.failedCount > 0 ? ` (${data.failedCount} failed)` : ""}` 
+        })
+        setUrgentDmMessage("")
+        mutateUrgentDmHistory()
+      } else {
+        setUrgentDmResult({ type: "error", text: data.error || "Failed to send DMs" })
+      }
+    } catch (error) {
+      setUrgentDmResult({ type: "error", text: "Network error. Please try again." })
+    } finally {
+      setIsSendingUrgentDm(false)
     }
   }
 
@@ -558,7 +607,7 @@ export default function AdminPage() {
       </div>
 
       <Tabs defaultValue="servers" className="w-full">
-        <TabsList className="grid w-full max-w-2xl grid-cols-4">
+        <TabsList className="grid w-full max-w-3xl grid-cols-5">
           <TabsTrigger value="servers" className="gap-2">
             <Server className="h-4 w-4" />
             Servers
@@ -574,6 +623,10 @@ export default function AdminPage() {
           <TabsTrigger value="templates" className="gap-2">
             <FileText className="h-4 w-4" />
             Templates
+          </TabsTrigger>
+          <TabsTrigger value="urgent-dm" className="gap-2">
+            <MessageSquareWarning className="h-4 w-4" />
+            Urgent DMs
           </TabsTrigger>
         </TabsList>
 
@@ -2042,6 +2095,202 @@ export default function AdminPage() {
                             </AlertDialog>
                           </DropdownMenuContent>
                         </DropdownMenu>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Urgent DMs Tab */}
+        <TabsContent value="urgent-dm" className="mt-6 space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <MessageSquareWarning className="h-5 w-5 text-destructive" />
+                Send Urgent DMs to Guild Owners
+              </CardTitle>
+              <CardDescription>
+                Send direct messages to all guild owners for a specific bot. Use this for urgent notifications only.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* Bot Selection */}
+              <div className="space-y-2">
+                <Label htmlFor="urgent-dm-bot">Select Bot</Label>
+                <div className="flex flex-wrap gap-2">
+                  {Object.entries(BOT_NAMES).map(([id, name]) => (
+                    <Button
+                      key={id}
+                      variant={urgentDmBot === id ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setUrgentDmBot(id)}
+                      className="gap-2"
+                    >
+                      <Bot className="h-4 w-4" />
+                      {name}
+                    </Button>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  DMs will be sent to all guild owners where {BOT_NAMES[urgentDmBot] || urgentDmBot} is installed.
+                </p>
+              </div>
+
+              {/* Message Input */}
+              <div className="space-y-2">
+                <Label htmlFor="urgent-dm-message">Urgent Message</Label>
+                <Textarea
+                  id="urgent-dm-message"
+                  placeholder="Enter your urgent notification message here..."
+                  value={urgentDmMessage}
+                  onChange={(e) => setUrgentDmMessage(e.target.value)}
+                  rows={5}
+                  className="resize-none"
+                />
+                <p className="text-xs text-muted-foreground">
+                  This message will be sent as an embed with an urgent notification header.
+                </p>
+              </div>
+
+              {/* Warning Notice */}
+              <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4">
+                <div className="flex items-start gap-3">
+                  <AlertTriangle className="mt-0.5 h-5 w-5 text-destructive" />
+                  <div className="space-y-1">
+                    <p className="font-medium text-destructive">Use with caution</p>
+                    <p className="text-sm text-muted-foreground">
+                      This will send DMs to all guild owners. Overuse may lead to users blocking the bot.
+                      Only use for critical announcements such as security issues, major outages, or breaking changes.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Result Message */}
+              {urgentDmResult && (
+                <div className={`flex items-center gap-2 rounded-lg p-3 ${
+                  urgentDmResult.type === "success" 
+                    ? "bg-green-500/10 text-green-500" 
+                    : "bg-destructive/10 text-destructive"
+                }`}>
+                  {urgentDmResult.type === "success" ? (
+                    <CheckCircle className="h-4 w-4" />
+                  ) : (
+                    <AlertTriangle className="h-4 w-4" />
+                  )}
+                  <span className="text-sm">{urgentDmResult.text}</span>
+                </div>
+              )}
+
+              {/* Send Button */}
+              <div className="flex justify-end">
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button 
+                      variant="destructive" 
+                      disabled={!urgentDmMessage.trim() || isSendingUrgentDm}
+                      className="gap-2"
+                    >
+                      {isSendingUrgentDm ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Send className="h-4 w-4" />
+                      )}
+                      Send Urgent DMs
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle className="flex items-center gap-2">
+                        <AlertTriangle className="h-5 w-5 text-destructive" />
+                        Confirm Urgent DM
+                      </AlertDialogTitle>
+                      <AlertDialogDescription>
+                        You are about to send a DM to all owners of servers where <strong>{BOT_NAMES[urgentDmBot]}</strong> is installed. 
+                        This action cannot be undone. Are you sure you want to proceed?
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={handleSendUrgentDm}
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                      >
+                        Yes, Send DMs
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* DM History */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Clock className="h-5 w-5" />
+                Recent Urgent DMs
+              </CardTitle>
+              <CardDescription>
+                History of urgent DMs sent to guild owners.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {urgentDmHistoryLoading ? (
+                <div className="space-y-3">
+                  {[...Array(3)].map((_, i) => (
+                    <Skeleton key={i} className="h-20 rounded-lg" />
+                  ))}
+                </div>
+              ) : !urgentDmHistory?.history?.length ? (
+                <div className="flex flex-col items-center justify-center py-8 text-center">
+                  <MessageSquareWarning className="h-12 w-12 text-muted-foreground/50" />
+                  <p className="mt-4 text-muted-foreground">No urgent DMs have been sent yet.</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {urgentDmHistory.history.map((dm: {
+                    id: string
+                    botId: string
+                    message: string
+                    sentBy: string
+                    sentAt: string
+                    successCount: number
+                    recipientCount: number
+                    failedGuilds: string[]
+                  }) => (
+                    <div key={dm.id} className="rounded-lg border border-border bg-secondary/30 p-4">
+                      <div className="flex items-start justify-between">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <Badge variant="outline" className="gap-1">
+                              <Bot className="h-3 w-3" />
+                              {BOT_NAMES[dm.botId] || dm.botId}
+                            </Badge>
+                            <span className="text-xs text-muted-foreground">
+                              by {dm.sentBy}
+                            </span>
+                          </div>
+                          <p className="text-sm text-foreground line-clamp-2">{dm.message}</p>
+                        </div>
+                        <div className="text-right text-xs text-muted-foreground">
+                          <p>{new Date(dm.sentAt).toLocaleDateString()}</p>
+                          <p>{new Date(dm.sentAt).toLocaleTimeString()}</p>
+                        </div>
+                      </div>
+                      <div className="mt-2 flex items-center gap-4 text-xs">
+                        <span className="text-green-500">
+                          {dm.successCount} sent
+                        </span>
+                        {dm.failedGuilds?.length > 0 && (
+                          <span className="text-destructive">
+                            {dm.failedGuilds.length} failed
+                          </span>
+                        )}
                       </div>
                     </div>
                   ))}
