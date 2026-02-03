@@ -90,6 +90,7 @@ export async function GET(
 
     // Fetch user's guild IDs from Discord API (not stored in session to avoid 4KB cookie limit)
     const userGuildIds = await fetchUserGuildIds(accessToken)
+    console.log("[v0] admin-guilds: User", userId, "is in", userGuildIds.length, "guilds")
 
     // Connect to MongoDB for this bot
     const db = await getBotDatabase(botId as BotId)
@@ -146,6 +147,11 @@ export async function GET(
         adminRoleIds: { $exists: true, $ne: [] }
       })
       .toArray()
+    
+    console.log("[v0] admin-guilds: Found", guildConfigs.length, "guild configs with admin roles for user's guilds")
+    guildConfigs.forEach(c => {
+      console.log("[v0] admin-guilds: Guild", c.guildId, "has adminRoleIds:", c.adminRoleIds)
+    })
 
     // For each guild with admin roles, fetch user's current roles and check access
     const adminGuildIds: string[] = []
@@ -156,6 +162,7 @@ export async function GET(
         const adminRoleIds = configDoc.adminRoleIds || []
         const userRoles = await fetchMemberRoles(accessToken, configDoc.guildId)
         const hasAdminRole = adminRoleIds.some((roleId: string) => userRoles.includes(roleId))
+        console.log("[v0] admin-guilds: Guild", configDoc.guildId, "- user roles:", userRoles.join(","), "| admin roles:", adminRoleIds.join(","), "| hasAdminRole:", hasAdminRole)
         return { guildId: configDoc.guildId, hasAdminRole }
       })
     )
@@ -165,6 +172,8 @@ export async function GET(
         adminGuildIds.push(check.guildId)
       }
     }
+
+    console.log("[v0] admin-guilds: Final adminGuildIds:", adminGuildIds)
 
     // Return the list of guild IDs where user has admin role access
     return NextResponse.json({
