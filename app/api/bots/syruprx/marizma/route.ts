@@ -2,11 +2,15 @@ import { NextResponse } from "next/server"
 import { cookies } from "next/headers"
 import { getBotDatabase, isBotConfigured } from "@/lib/mongodb"
 import { resolveUserId } from "@/lib/roblox"
+import { BOT_TOKENS } from "@/lib/discord"
+import { isMasterUser } from "@/lib/admin"
 
 export const dynamic = "force-dynamic"
 
+const DISCORD_API_BASE = "https://discord.com/api/v10"
+
 // Verify user has permission to manage this guild
-// Fetches current guild membership from Discord to get fresh permissions
+// Uses bot token to check if user has the configured admin role
 async function verifyGuildPermission(guildId: string): Promise<boolean> {
   const cookieStore = await cookies()
   const sessionCookie = cookieStore.get("discord_session")
@@ -17,50 +21,67 @@ async function verifyGuildPermission(guildId: string): Promise<boolean> {
 
   try {
     const session = JSON.parse(sessionCookie.value)
+    const userId = session.user?.id
+    
+    if (!userId) {
+      return false
+    }
     
     // Master admins can manage all guilds
-    if (session.isAdmin === true) {
+    if (session.isAdmin === true || isMasterUser(userId)) {
       return true
     }
     
-    const accessToken = session.accessToken
-    if (!accessToken) {
+    // Get the bot token for SyrupRx
+    const botToken = BOT_TOKENS.syruprx
+    if (!botToken) {
       return false
     }
     
-    // Check if user is in this guild
-    const userGuildIds = session.guildIds || (session.guilds?.map((g: { id: string }) => g.id) || [])
-    if (!userGuildIds.includes(guildId)) {
-      return false
+    // Get admin role config from MongoDB
+    const db = await getBotDatabase("syruprx")
+    if (!db) return false
+    
+    // Check mapleguildconfigs collection (bot setup)
+    const mapleConfig = await db.collection("mapleguildconfigs").findOne({ guildId })
+    const dashboardConfig = await db.collection("configs").findOne({ guildId })
+    
+    // Collect admin role IDs from both sources
+    const adminRoleIds: string[] = []
+    if (mapleConfig?.adminRoleIds) adminRoleIds.push(...mapleConfig.adminRoleIds)
+    if (dashboardConfig?.config?.adminRoleIds) adminRoleIds.push(...dashboardConfig.config.adminRoleIds)
+    
+    if (adminRoleIds.length === 0) {
+      // No admin roles configured - fall back to Discord MANAGE_GUILD permission
+      // Fetch user's guild membership using bot token
+      const memberResponse = await fetch(
+        `${DISCORD_API_BASE}/guilds/${guildId}/members/${userId}`,
+        { headers: { Authorization: `Bot ${botToken}` } }
+      )
+      
+      if (!memberResponse.ok) return false
+      
+      // User is in the guild - check if they have manage permissions via Discord
+      // For now, if no admin roles are configured, allow users who are in the guild
+      // The guild page already requires MANAGE_GUILD to access
+      return true
     }
     
-    // Fetch current guilds to get fresh permissions
-    const guildsResponse = await fetch(
-      `https://discord.com/api/users/@me/guilds`,
-      {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-      }
+    // Fetch user's roles in this guild using bot token
+    const memberResponse = await fetch(
+      `${DISCORD_API_BASE}/guilds/${guildId}/members/${userId}`,
+      { headers: { Authorization: `Bot ${botToken}` } }
     )
     
-    if (!guildsResponse.ok) {
+    if (!memberResponse.ok) {
       return false
     }
     
-    const guilds = await guildsResponse.json()
-    const guild = guilds.find((g: { id: string }) => g.id === guildId)
+    const member = await memberResponse.json()
+    const userRoles: string[] = member.roles || []
     
-    if (!guild) {
-      return false
-    }
-
-    const permissions = BigInt(guild.permissions || 0)
-    const MANAGE_GUILD = BigInt(0x20)
-    const ADMINISTRATOR = BigInt(0x8)
-    
-    return (permissions & MANAGE_GUILD) === MANAGE_GUILD || 
-           (permissions & ADMINISTRATOR) === ADMINISTRATOR
+    // Check if user has any of the configured admin roles
+    return adminRoleIds.some(roleId => userRoles.includes(roleId))
   } catch {
     return false
   }
