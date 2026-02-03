@@ -75,7 +75,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<DiscordUser | null>(null)
   const [guilds, setGuilds] = useState<SessionGuild[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [guildsLoading, setGuildsLoading] = useState(false)
+  const [guildsLoading, setGuildsLoading] = useState(true) // Start true until session check completes
   const [isAdmin, setIsAdmin] = useState(false)
   const [isAdminLoading, setIsAdminLoading] = useState(true)
 
@@ -140,6 +140,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(null)
         setGuilds([])
         setIsAdmin(false)
+        setGuildsLoading(false) // No user, no guilds to load
         clearCachedGuilds()
       }
     } catch (error) {
@@ -147,6 +148,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(null)
       setGuilds([])
       setIsAdmin(false)
+      setGuildsLoading(false)
       clearCachedGuilds()
     } finally {
       setIsLoading(false)
