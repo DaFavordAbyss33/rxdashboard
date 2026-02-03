@@ -56,7 +56,8 @@ export async function GET(
 
     // Master user gets access to ALL guilds where the bot is installed
     if (isMasterUser(userId)) {
-      const allGuildConfigs = await db.collection("guildConfigs")
+      // Use "configs" collection - same as the config route
+      const allGuildConfigs = await db.collection("configs")
         .find({ botId })
         .toArray()
       
@@ -73,7 +74,8 @@ export async function GET(
     const userGuildIds = userGuilds.map((g: { id: string }) => g.id)
     
     // Find all guild configs for this bot where the user might have an admin role
-    const guildConfigs = await db.collection("guildConfigs")
+    // Use "configs" collection - same as the config route that saves adminRoleIds
+    const guildConfigs = await db.collection("configs")
       .find({
         botId,
         guildId: { $in: userGuildIds }
@@ -83,18 +85,19 @@ export async function GET(
     // For each guild, check if user has one of the admin roles
     const adminGuildIds: string[] = []
     
-    for (const config of guildConfigs) {
-      const adminRoleIds = config.config?.adminRoleIds || []
+    for (const configDoc of guildConfigs) {
+      // adminRoleIds is stored at configDoc.config.adminRoleIds
+      const adminRoleIds = configDoc.config?.adminRoleIds || []
       if (adminRoleIds.length === 0) continue
 
       // Get user's roles in this guild from session
-      const guildData = userGuilds.find((g: { id: string }) => g.id === config.guildId)
+      const guildData = userGuilds.find((g: { id: string }) => g.id === configDoc.guildId)
       const userRoles = guildData?.memberRoles || []
 
       // Check if user has any of the admin roles
       const hasAdminRole = adminRoleIds.some((roleId: string) => userRoles.includes(roleId))
       if (hasAdminRole) {
-        adminGuildIds.push(config.guildId)
+        adminGuildIds.push(configDoc.guildId)
       }
     }
 
