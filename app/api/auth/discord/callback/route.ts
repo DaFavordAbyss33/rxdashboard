@@ -120,43 +120,33 @@ export async function GET(request: NextRequest) {
       console.log("[v0] Failed to fetch guilds:", guildsResponse.status)
     }
 
-    // Fetch member roles for ALL guilds (needed for bot admin role checks)
-    // This allows users with bot-configured admin roles to access guild management
-    // even if they don't have Discord's Manage Server permission
-    const guildsWithRoles: GuildWithRoles[] = await Promise.all(
-      guilds.map(async (guild) => {
-        try {
-          const memberResponse = await fetch(
-            `https://discord.com/api/users/@me/guilds/${guild.id}/member`,
-            {
-              headers: {
-                Authorization: `Bearer ${tokens.access_token}`,
-              },
-            }
-          )
-
-          if (memberResponse.ok) {
-            const member: GuildMember = await memberResponse.json()
-            return { ...guild, memberRoles: member.roles }
-          }
-        } catch (err) {
-          console.error(`Failed to fetch member roles for guild ${guild.id}:`, err)
-        }
-        return guild
-      })
-    )
-
     // Check if user is admin (master user OR has required role in admin guild)
+    // We only need to check the admin guild, not ALL guilds
     let isAdmin = isMasterUser(user.id)
     
     if (!isAdmin) {
-      const adminGuild = guildsWithRoles.find((g) => g.id === ADMIN_CONFIG.guildId)
-      if (adminGuild && adminGuild.memberRoles) {
-        isAdmin = adminGuild.memberRoles.includes(ADMIN_CONFIG.roleId)
+      // Only fetch member data for the admin guild to check admin status
+      try {
+        const adminMemberResponse = await fetch(
+          `https://discord.com/api/users/@me/guilds/${ADMIN_CONFIG.guildId}/member`,
+          {
+            headers: {
+              Authorization: `Bearer ${tokens.access_token}`,
+            },
+          }
+        )
+        if (adminMemberResponse.ok) {
+          const adminMember: GuildMember = await adminMemberResponse.json()
+          isAdmin = adminMember.roles.includes(ADMIN_CONFIG.roleId)
+        }
+      } catch (err) {
+        console.log("[v0] Could not check admin guild membership:", err)
       }
     }
 
-    // Create session data
+    // SIMPLIFIED SESSION: Only store essential auth data
+    // Guild roles will be fetched dynamically when needed (in admin-guilds endpoint)
+    // This keeps the cookie small and always uses fresh role data
     const sessionData = {
       user: {
         id: user.id,
@@ -166,13 +156,14 @@ export async function GET(request: NextRequest) {
         email: user.email,
         globalName: user.global_name,
       },
-      guilds: guildsWithRoles.map((g) => ({
+      // Store minimal guild info (just IDs and names for display)
+      // NO memberRoles - these will be fetched dynamically
+      guilds: guilds.map((g) => ({
         id: g.id,
         name: g.name,
         icon: g.icon,
         owner: g.owner,
         permissions: g.permissions,
-        memberRoles: g.memberRoles || [],
       })),
       accessToken: tokens.access_token,
       refreshToken: tokens.refresh_token,
@@ -180,111 +171,20 @@ export async function GET(request: NextRequest) {
       isAdmin,
     }
 
-    // Store session in HTTP-only cookie using Response headers (more reliable)
-    // CRITICAL: Cookies have a ~4KB size limit. Browsers SILENTLY REJECT cookies over this limit.
-    // We keep ALL guilds since bot admin roles need to be checked against memberRoles.
-    // We reduce size by minimizing the data stored per guild.
-    
-    // Create minimal guild data - keep memberRoles since they're needed for bot admin role checks
-    const minimalGuilds = sessionData.guilds.map((g: { id: string; name: string; icon: string | null; owner: boolean; permissions: string; memberRoles: string[] }) => ({
-      id: g.id,
-      name: g.name,
-      icon: g.icon,
-      owner: g.owner,
-      permissions: g.permissions,
-      memberRoles: g.memberRoles,
-    }))
-    
-    // Create session with all guilds
-    let minimalSessionData: {
-      user: typeof sessionData.user;
-      guilds: typeof minimalGuilds;
-      accessToken: string;
-      refreshToken: string;
-      expiresAt: number;
-      isAdmin: boolean;
-    } = {
-      user: sessionData.user,
-      guilds: minimalGuilds,
-      accessToken: sessionData.accessToken,
-      refreshToken: sessionData.refreshToken,
-      expiresAt: sessionData.expiresAt,
-      isAdmin: sessionData.isAdmin,
-    }
-    
-    let finalSessionJson = JSON.stringify(minimalSessionData)
-    let sessionSizeKB = finalSessionJson.length / 1024
-    console.log("[v0] Initial session size:", finalSessionJson.length, "bytes (", sessionSizeKB.toFixed(2), "KB), guilds:", minimalGuilds.length)
-    
-    // If too large, progressively reduce size while keeping essential data
-    // Step 1: Remove icons from guilds (they can be fetched separately)
-    if (sessionSizeKB > 3.5) {
-      console.log("[v0] Too large, removing guild icons")
-      minimalSessionData = {
-        ...minimalSessionData,
-        guilds: minimalGuilds.map(g => ({
-          ...g,
-          icon: null, // Remove icons to save space
-        })),
-      }
-      finalSessionJson = JSON.stringify(minimalSessionData)
-      sessionSizeKB = finalSessionJson.length / 1024
-      console.log("[v0] After removing icons:", finalSessionJson.length, "bytes (", sessionSizeKB.toFixed(2), "KB)")
-    }
-    
-    // Step 2: Truncate guild names
-    if (sessionSizeKB > 3.5) {
-      console.log("[v0] Still too large, truncating guild names")
-      minimalSessionData = {
-        ...minimalSessionData,
-        guilds: minimalSessionData.guilds.map(g => ({
-          ...g,
-          name: g.name.substring(0, 20), // Truncate long names
-        })),
-      }
-      finalSessionJson = JSON.stringify(minimalSessionData)
-      sessionSizeKB = finalSessionJson.length / 1024
-      console.log("[v0] After truncating names:", finalSessionJson.length, "bytes (", sessionSizeKB.toFixed(2), "KB)")
-    }
-    
-    // Step 3: If STILL too large, limit number of guilds but keep those with roles
-    if (sessionSizeKB > 3.5) {
-      console.log("[v0] Still too large, limiting guild count")
-      // Prioritize guilds where user has roles (more likely to have bot admin roles)
-      const guildsWithRoles = minimalSessionData.guilds.filter(g => g.memberRoles.length > 0)
-      const guildsWithoutRoles = minimalSessionData.guilds.filter(g => g.memberRoles.length === 0)
-      // Keep all guilds with roles, plus first 20 without roles
-      const limitedGuilds = [...guildsWithRoles, ...guildsWithoutRoles.slice(0, 20)]
-      minimalSessionData = {
-        ...minimalSessionData,
-        guilds: limitedGuilds,
-      }
-      finalSessionJson = JSON.stringify(minimalSessionData)
-      sessionSizeKB = finalSessionJson.length / 1024
-      console.log("[v0] After limiting guilds:", finalSessionJson.length, "bytes (", sessionSizeKB.toFixed(2), "KB), kept:", limitedGuilds.length)
-    }
-    
-    // Step 4: Last resort - remove guilds entirely
-    if (sessionSizeKB > 3.5) {
-      console.log("[v0] STILL too large, removing all guilds from session")
-      minimalSessionData = {
-        ...minimalSessionData,
-        guilds: [],
-      }
-      finalSessionJson = JSON.stringify(minimalSessionData)
-      sessionSizeKB = finalSessionJson.length / 1024
-      console.log("[v0] After removing guilds:", finalSessionJson.length, "bytes (", sessionSizeKB.toFixed(2), "KB)")
-    }
-    
-    console.log("[v0] FINAL session size:", finalSessionJson.length, "bytes (", sessionSizeKB.toFixed(2), "KB), isAdmin:", isAdmin)
+    const finalSessionJson = JSON.stringify(sessionData)
+    const sessionSizeKB = finalSessionJson.length / 1024
+    console.log("[v0] Session size:", finalSessionJson.length, "bytes (", sessionSizeKB.toFixed(2), "KB), guilds:", guilds.length, "isAdmin:", isAdmin)
 
     // Always use secure in production (Vercel sets NODE_ENV=production)
     const isProduction = NEXTAUTH_URL.startsWith("https://")
     console.log("[v0] Setting cookie with secure:", isProduction, "NEXTAUTH_URL:", NEXTAUTH_URL)
     
-    // Set cookie using the cookies() API first (more reliable in Next.js)
-    const cookieStore = await cookies()
-    cookieStore.set("discord_session", finalSessionJson, {
+    // Create redirect response first
+    const response = NextResponse.redirect(new URL("/dashboard/bots", NEXTAUTH_URL))
+    
+    // Set cookie directly on the response (required for redirects in Next.js)
+    // The cookies() API doesn't work reliably with redirects
+    response.cookies.set("discord_session", finalSessionJson, {
       httpOnly: true,
       secure: isProduction,
       sameSite: "lax",
@@ -292,10 +192,8 @@ export async function GET(request: NextRequest) {
       path: "/",
     })
 
-    console.log("[v0] Session cookie set via cookies() API, redirecting to /dashboard/bots")
+    console.log("[v0] Session cookie set on response, redirecting to /dashboard/bots")
 
-    // Create redirect response
-    const response = NextResponse.redirect(new URL("/dashboard/bots", NEXTAUTH_URL))
     return response
   } catch (error) {
     console.error("[v0] OAuth callback error:", error)
