@@ -5,6 +5,27 @@ import { isMasterUser } from "@/lib/admin"
 
 export const dynamic = "force-dynamic"
 
+// Helper to fetch user's roles in a specific guild using their access token
+async function fetchMemberRoles(accessToken: string, guildId: string): Promise<string[]> {
+  try {
+    const response = await fetch(
+      `https://discord.com/api/users/@me/guilds/${guildId}/member`,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      }
+    )
+    if (response.ok) {
+      const member = await response.json()
+      return member.roles || []
+    }
+  } catch (err) {
+    console.error(`Failed to fetch member roles for guild ${guildId}:`, err)
+  }
+  return []
+}
+
 // GET /api/bots/[botId]/admin-guilds - Get guilds where user has admin role for this bot
 export async function GET(
   request: Request,
@@ -34,16 +55,18 @@ export async function GET(
 
     const userId = session.user?.id
     const userGuilds = session.guilds || []
-
-    console.log("[v0] admin-guilds: userId:", userId, "userGuilds count:", userGuilds.length)
-    
-    // Log guilds with their memberRoles for debugging
-    const guildsWithRoles = userGuilds.filter((g: { id: string; memberRoles?: string[] }) => g.memberRoles && g.memberRoles.length > 0)
-    console.log("[v0] admin-guilds: guilds with roles:", guildsWithRoles.length, "guilds:", guildsWithRoles.map((g: { id: string; name: string; memberRoles?: string[] }) => ({ id: g.id, name: g.name, rolesCount: g.memberRoles?.length || 0 })))
+    const accessToken = session.accessToken
 
     if (!userId) {
       return NextResponse.json(
         { success: false, error: "User not found in session", adminGuildIds: [] },
+        { status: 401 }
+      )
+    }
+
+    if (!accessToken) {
+      return NextResponse.json(
+        { success: false, error: "No access token in session", adminGuildIds: [] },
         { status: 401 }
       )
     }
@@ -60,11 +83,11 @@ export async function GET(
       })
     }
 
+    // Get user's guild IDs from the session
+    const userGuildIds = userGuilds.map((g: { id: string }) => g.id)
+
     // Master user: return both permissioned guilds AND all guilds separately
     if (isMasterUser(userId)) {
-      // Get user's guild IDs from the session
-      const userGuildIds = userGuilds.map((g: { id: string }) => g.id)
-      
       // Get all guild configs (for all guilds list)
       const allGuildConfigs = await db.collection("mapleguildconfigs")
         .find({})
@@ -72,19 +95,18 @@ export async function GET(
       
       const allGuildIds = allGuildConfigs.map(config => config.guildId)
       
-      // Find guild configs where user is in the guild (to check admin roles)
+      // Find guild configs where user is in the guild AND has admin roles configured
       const userGuildConfigs = allGuildConfigs.filter(config => 
-        userGuildIds.includes(config.guildId)
+        userGuildIds.includes(config.guildId) && 
+        config.adminRoleIds && 
+        config.adminRoleIds.length > 0
       )
       
-      // Check which guilds user has admin role in
+      // Fetch roles dynamically and check which guilds user has admin role in
       const adminRoleGuildIds: string[] = []
       for (const configDoc of userGuildConfigs) {
         const adminRoleIds = configDoc.adminRoleIds || []
-        if (adminRoleIds.length === 0) continue
-        
-        const guildData = userGuilds.find((g: { id: string; memberRoles?: string[] }) => g.id === configDoc.guildId)
-        const userRoles = guildData?.memberRoles || []
+        const userRoles = await fetchMemberRoles(accessToken, configDoc.guildId)
         
         const hasAdminRole = adminRoleIds.some((roleId: string) => userRoles.includes(roleId))
         if (hasAdminRole) {
@@ -100,43 +122,30 @@ export async function GET(
       })
     }
 
-    // Get user's guild IDs from the session
-    const userGuildIds = userGuilds.map((g: { id: string }) => g.id)
-    
-    // Find all guild configs for guilds the user is in
-    // Collection name: mapleguildconfigs (Mongoose pluralizes and lowercases MapleGuildConfig)
+    // Find all guild configs for guilds the user is in that have admin roles configured
     const guildConfigs = await db.collection("mapleguildconfigs")
       .find({
-        guildId: { $in: userGuildIds }
+        guildId: { $in: userGuildIds },
+        adminRoleIds: { $exists: true, $ne: [] }
       })
       .toArray()
 
-    console.log("[v0] admin-guilds: found", guildConfigs.length, "guild configs for user's guilds")
-
-    // For each guild, check if user has one of the admin roles
+    // For each guild with admin roles, fetch user's current roles and check access
     const adminGuildIds: string[] = []
     
-    for (const configDoc of guildConfigs) {
-      // adminRoleIds is stored DIRECTLY on the document (not nested in config)
-      const adminRoleIds = configDoc.adminRoleIds || []
-      
-      // Get user's roles in this guild from session
-      const guildData = userGuilds.find((g: { id: string; memberRoles?: string[] }) => g.id === configDoc.guildId)
-      const userRoles = guildData?.memberRoles || []
-
-      console.log("[v0] admin-guilds: checking guild", configDoc.guildId, "adminRoleIds:", adminRoleIds, "userRoles:", userRoles)
-
-      if (adminRoleIds.length === 0) {
-        console.log("[v0] admin-guilds: no admin roles configured for guild", configDoc.guildId)
-        continue
-      }
-
-      // Check if user has any of the admin roles
-      const hasAdminRole = adminRoleIds.some((roleId: string) => userRoles.includes(roleId))
-      console.log("[v0] admin-guilds: hasAdminRole:", hasAdminRole, "for guild", configDoc.guildId)
-      
-      if (hasAdminRole) {
-        adminGuildIds.push(configDoc.guildId)
+    // Fetch all roles in parallel for better performance
+    const roleChecks = await Promise.all(
+      guildConfigs.map(async (configDoc) => {
+        const adminRoleIds = configDoc.adminRoleIds || []
+        const userRoles = await fetchMemberRoles(accessToken, configDoc.guildId)
+        const hasAdminRole = adminRoleIds.some((roleId: string) => userRoles.includes(roleId))
+        return { guildId: configDoc.guildId, hasAdminRole }
+      })
+    )
+    
+    for (const check of roleChecks) {
+      if (check.hasAdminRole) {
+        adminGuildIds.push(check.guildId)
       }
     }
 
