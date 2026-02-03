@@ -173,22 +173,27 @@ export async function GET(request: NextRequest) {
 
     // Always use secure in production (Vercel sets NODE_ENV=production)
     const isProduction = NEXTAUTH_URL.startsWith("https://")
-    console.log("[v0] Setting cookie with secure:", isProduction, "NEXTAUTH_URL:", NEXTAUTH_URL)
+    console.log("[v0] Setting cookie - secure:", isProduction, "NEXTAUTH_URL:", NEXTAUTH_URL, "NODE_ENV:", process.env.NODE_ENV)
     
     // Create redirect response first
     const response = NextResponse.redirect(new URL("/dashboard/bots", NEXTAUTH_URL))
     
-    // Set cookie directly on the response (required for redirects in Next.js)
-    // The cookies() API doesn't work reliably with redirects
-    response.cookies.set("discord_session", finalSessionJson, {
+    // Cookie options for debugging
+    const cookieOptions = {
       httpOnly: true,
       secure: isProduction,
-      sameSite: "lax",
+      sameSite: "lax" as const,
       maxAge: 60 * 60 * 24 * 7, // 7 days
       path: "/",
-    })
+    }
+    console.log("[v0] Cookie options:", JSON.stringify(cookieOptions))
+    
+    // Set cookie directly on the response (required for redirects in Next.js)
+    // The cookies() API doesn't work reliably with redirects
+    response.cookies.set("discord_session", finalSessionJson, cookieOptions)
 
     console.log("[v0] Session cookie set on response, redirecting to /dashboard/bots")
+    console.log("[v0] Response cookies:", response.cookies.getAll().map(c => ({ name: c.name, valueLen: c.value.length })))
 
     return response
   } catch (error) {
