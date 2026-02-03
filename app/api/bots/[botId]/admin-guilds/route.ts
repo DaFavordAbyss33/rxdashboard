@@ -37,9 +37,13 @@ async function fetchMemberRoles(accessToken: string, guildId: string): Promise<s
     if (response.ok) {
       const member = await response.json()
       return member.roles || []
+    } else {
+      // Log the error response from Discord
+      const errorText = await response.text()
+      console.error(`[v0] fetchMemberRoles: Discord API error for guild ${guildId} - Status: ${response.status}, Error: ${errorText}`)
     }
   } catch (err) {
-    console.error(`Failed to fetch member roles for guild ${guildId}:`, err)
+    console.error(`[v0] fetchMemberRoles: Exception for guild ${guildId}:`, err)
   }
   return []
 }
