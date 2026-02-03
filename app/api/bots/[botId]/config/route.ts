@@ -56,28 +56,8 @@ async function verifyGuildPermission(guildId: string): Promise<boolean> {
       return false
     }
     
-    // Check if user is in this guild (from stored guildIds or guilds array)
-    const userGuildIds = session.guildIds || (session.guilds?.map((g: { id: string }) => g.id) || [])
-    if (!userGuildIds.includes(guildId)) {
-      return false
-    }
-    
-    // Fetch current member data to get fresh permissions
-    const memberResponse = await fetch(
-      `https://discord.com/api/users/@me/guilds/${guildId}/member`,
-      {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-      }
-    )
-    
-    if (!memberResponse.ok) {
-      return false
-    }
-    
-    // For guild member endpoint, we need to fetch guild info separately for permissions
-    // Actually, the guilds endpoint gives us permissions, so let's use that
+    // Fetch user's guilds from Discord API to check permissions
+    // (guildIds no longer stored in session to avoid 4KB cookie limit)
     const guildsResponse = await fetch(
       `https://discord.com/api/users/@me/guilds`,
       {

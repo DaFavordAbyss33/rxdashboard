@@ -144,9 +144,10 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // MINIMAL SESSION: Only store essential auth data
-    // Guild list will be fetched dynamically using the access token
-    // This keeps the cookie well under the 4KB limit
+    // ULTRA-MINIMAL SESSION: Only store essential auth data
+    // Guild list will be fetched dynamically using the access token when needed
+    // This keeps the cookie well under the 4KB limit (target: ~500 bytes)
+    // DO NOT store guildIds - users in many servers will exceed the 4KB cookie limit
     const sessionData = {
       user: {
         id: user.id,
@@ -154,8 +155,7 @@ export async function GET(request: NextRequest) {
         avatar: user.avatar,
         globalName: user.global_name,
       },
-      // Only store guild IDs - names/icons can be fetched when needed
-      guildIds: guilds.map((g) => g.id),
+      // NO guildIds - fetch dynamically with access token when needed
       accessToken: tokens.access_token,
       refreshToken: tokens.refresh_token,
       expiresAt: Date.now() + tokens.expires_in * 1000,
@@ -164,36 +164,29 @@ export async function GET(request: NextRequest) {
 
     const finalSessionJson = JSON.stringify(sessionData)
     const sessionSizeKB = finalSessionJson.length / 1024
-    console.log("[v0] Session size:", finalSessionJson.length, "bytes (", sessionSizeKB.toFixed(2), "KB), guildIds:", guilds.length, "isAdmin:", isAdmin)
+    console.log("[v0] Session size:", finalSessionJson.length, "bytes (", sessionSizeKB.toFixed(2), "KB)")
     
-    // Final safety check - if STILL too large, something is wrong
+    // Final safety check - should now be well under 1KB
     if (sessionSizeKB > 3.5) {
-      console.error("[v0] WARNING: Session still too large at", sessionSizeKB.toFixed(2), "KB")
+      console.error("[v0] WARNING: Session too large at", sessionSizeKB.toFixed(2), "KB - this should not happen!")
     }
 
     // Always use secure in production (Vercel sets NODE_ENV=production)
     const isProduction = NEXTAUTH_URL.startsWith("https://")
-    console.log("[v0] Setting cookie - secure:", isProduction, "NEXTAUTH_URL:", NEXTAUTH_URL, "NODE_ENV:", process.env.NODE_ENV)
     
     // Create redirect response first
     const response = NextResponse.redirect(new URL("/dashboard/bots", NEXTAUTH_URL))
     
-    // Cookie options for debugging
-    const cookieOptions = {
+    // Set cookie directly on the response (required for redirects in Next.js)
+    response.cookies.set("discord_session", finalSessionJson, {
       httpOnly: true,
       secure: isProduction,
-      sameSite: "lax" as const,
+      sameSite: "lax",
       maxAge: 60 * 60 * 24 * 7, // 7 days
       path: "/",
-    }
-    console.log("[v0] Cookie options:", JSON.stringify(cookieOptions))
-    
-    // Set cookie directly on the response (required for redirects in Next.js)
-    // The cookies() API doesn't work reliably with redirects
-    response.cookies.set("discord_session", finalSessionJson, cookieOptions)
+    })
 
-    console.log("[v0] Session cookie set on response, redirecting to /dashboard/bots")
-    console.log("[v0] Response cookies:", response.cookies.getAll().map(c => ({ name: c.name, valueLen: c.value.length })))
+    console.log("[v0] Session cookie set, redirecting to /dashboard/bots")
 
     return response
   } catch (error) {
