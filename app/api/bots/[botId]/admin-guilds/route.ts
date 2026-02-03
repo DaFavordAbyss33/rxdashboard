@@ -110,35 +110,43 @@ export async function GET(
 
     // Master user: return both permissioned guilds AND all guilds separately
     if (isMasterUser(userId)) {
-      // Get all guild configs from both collections
+      // Get all guild configs from all three collections
+      const mapleGuildConfigs = await db.collection("mapleguildconfigs").find({}).toArray()
       const dashboardConfigs = await db.collection("configs").find({}).toArray()
       const botGuildConfigs = await db.collection("guilds").find({}).toArray()
       
-      // Collect all guild IDs from both sources
+      // Collect all guild IDs from all sources
       const allGuildIdsSet = new Set<string>()
+      mapleGuildConfigs.forEach(c => c.guildId && allGuildIdsSet.add(c.guildId))
       dashboardConfigs.forEach(c => c.guildId && allGuildIdsSet.add(c.guildId))
-      botGuildConfigs.forEach(c => {
-        const gId = c.guildId || c._id?.toString()
-        if (gId) allGuildIdsSet.add(gId)
-      })
+      botGuildConfigs.forEach(c => c.guildId && allGuildIdsSet.add(c.guildId))
       const allGuildIds = Array.from(allGuildIdsSet)
       
       // Build admin roles map for guilds user is in
       const guildAdminRolesMap = new Map<string, string[]>()
       
-      // From dashboard configs
-      for (const config of dashboardConfigs) {
+      // From mapleguildconfigs (adminRoleIds at root level)
+      for (const config of mapleGuildConfigs) {
         if (!userGuildIds.includes(config.guildId)) continue
-        const adminRoles = config.config?.adminRoleIds || []
+        const adminRoles = config.adminRoleIds || []
         if (adminRoles.length > 0) {
           guildAdminRolesMap.set(config.guildId, adminRoles)
         }
       }
       
-      // From bot configs
+      // From dashboard configs (adminRoleIds inside config object)
+      for (const config of dashboardConfigs) {
+        if (!userGuildIds.includes(config.guildId)) continue
+        const adminRoles = config.config?.adminRoleIds || []
+        if (adminRoles.length > 0) {
+          const existing = guildAdminRolesMap.get(config.guildId) || []
+          guildAdminRolesMap.set(config.guildId, [...new Set([...existing, ...adminRoles])])
+        }
+      }
+      
+      // From guilds configs
       for (const config of botGuildConfigs) {
-        const guildId = config.guildId || config._id?.toString()
-        if (!guildId || !userGuildIds.includes(guildId)) continue
+        if (!config.guildId || !userGuildIds.includes(config.guildId)) continue
         
         const adminRoles: string[] = []
         if (config.adminRole) adminRoles.push(config.adminRole)
@@ -146,8 +154,8 @@ export async function GET(
         if (Array.isArray(config.adminRoleIds)) adminRoles.push(...config.adminRoleIds)
         
         if (adminRoles.length > 0) {
-          const existing = guildAdminRolesMap.get(guildId) || []
-          guildAdminRolesMap.set(guildId, [...new Set([...existing, ...adminRoles])])
+          const existing = guildAdminRolesMap.get(config.guildId) || []
+          guildAdminRolesMap.set(config.guildId, [...new Set([...existing, ...adminRoles])])
         }
       }
       
@@ -169,9 +177,18 @@ export async function GET(
       })
     }
 
-    // Check BOTH collections:
-    // 1. "configs" collection - used by dashboard (adminRoleIds inside config object)
-    // 2. "guilds" collection - used by bot setup (adminRole or adminRoleIds at root level)
+    // Check THREE collections:
+    // 1. "mapleguildconfigs" - bot setup via Discord (adminRoleIds at ROOT level)
+    // 2. "configs" - dashboard setup (adminRoleIds inside config object)
+    // 3. "guilds" - alternative bot setup (adminRole/adminRoleId/adminRoleIds at root)
+    
+    // Get configs from mapleguildconfigs collection (bot setup - adminRoleIds at root)
+    const mapleGuildConfigs = await db.collection("mapleguildconfigs")
+      .find({
+        guildId: { $in: userGuildIds },
+        adminRoleIds: { $exists: true, $ne: [] }
+      })
+      .toArray()
     
     // Get configs from dashboard-style collection
     const dashboardConfigs = await db.collection("configs")
@@ -181,56 +198,61 @@ export async function GET(
       })
       .toArray()
     
-    // Get configs from bot-style collection (guilds collection)
-    // Bot might store as adminRole (string) or adminRoleIds (array) or adminRoleId (string)
+    // Get configs from guilds collection (alternative bot setup)
     const botConfigs = await db.collection("guilds")
       .find({
         $or: [
           { guildId: { $in: userGuildIds }, adminRole: { $exists: true, $ne: null } },
           { guildId: { $in: userGuildIds }, adminRoleId: { $exists: true, $ne: null } },
           { guildId: { $in: userGuildIds }, adminRoleIds: { $exists: true, $ne: [] } },
-          { _id: { $in: userGuildIds }, adminRole: { $exists: true, $ne: null } },
-          { _id: { $in: userGuildIds }, adminRoleId: { $exists: true, $ne: null } },
-          { _id: { $in: userGuildIds }, adminRoleIds: { $exists: true, $ne: [] } },
         ]
       })
       .toArray()
     
-    console.log("[v0] admin-guilds: Found", dashboardConfigs.length, "dashboard configs,", botConfigs.length, "bot configs")
+    console.log("[v0] admin-guilds: Found", mapleGuildConfigs.length, "mapleguildconfigs,", dashboardConfigs.length, "dashboard configs,", botConfigs.length, "guilds configs")
     
     // Log what we found for debugging
+    mapleGuildConfigs.forEach(c => {
+      console.log("[v0] admin-guilds: MapleGuildConfig for guild", c.guildId, "- adminRoleIds:", c.adminRoleIds)
+    })
     dashboardConfigs.forEach(c => {
       console.log("[v0] admin-guilds: Dashboard config for guild", c.guildId, "- adminRoleIds:", c.config?.adminRoleIds)
     })
     botConfigs.forEach(c => {
-      const gId = c.guildId || c._id
-      console.log("[v0] admin-guilds: Bot config for guild", gId, "- adminRole:", c.adminRole, "adminRoleId:", c.adminRoleId, "adminRoleIds:", c.adminRoleIds)
+      console.log("[v0] admin-guilds: Guilds config for guild", c.guildId, "- adminRole:", c.adminRole, "adminRoleId:", c.adminRoleId, "adminRoleIds:", c.adminRoleIds)
     })
 
-    // Build a map of guildId -> adminRoleIds (combining both sources)
+    // Build a map of guildId -> adminRoleIds (combining all sources)
     const guildAdminRolesMap = new Map<string, string[]>()
     
-    // Add dashboard configs
-    for (const config of dashboardConfigs) {
-      const adminRoles = config.config?.adminRoleIds || []
+    // Add mapleguildconfigs (adminRoleIds at root level)
+    for (const config of mapleGuildConfigs) {
+      const adminRoles = config.adminRoleIds || []
       if (adminRoles.length > 0) {
         guildAdminRolesMap.set(config.guildId, adminRoles)
       }
     }
     
-    // Add bot configs (might override or add to dashboard configs)
+    // Add dashboard configs (adminRoleIds inside config object)
+    for (const config of dashboardConfigs) {
+      const adminRoles = config.config?.adminRoleIds || []
+      if (adminRoles.length > 0) {
+        const existing = guildAdminRolesMap.get(config.guildId) || []
+        guildAdminRolesMap.set(config.guildId, [...new Set([...existing, ...adminRoles])])
+      }
+    }
+    
+    // Add guilds configs
     for (const config of botConfigs) {
-      const guildId = config.guildId || config._id?.toString()
+      const guildId = config.guildId
       if (!guildId) continue
       
-      // Collect all possible admin role fields
       const adminRoles: string[] = []
       if (config.adminRole) adminRoles.push(config.adminRole)
       if (config.adminRoleId) adminRoles.push(config.adminRoleId)
       if (Array.isArray(config.adminRoleIds)) adminRoles.push(...config.adminRoleIds)
       
       if (adminRoles.length > 0) {
-        // Merge with existing if any
         const existing = guildAdminRolesMap.get(guildId) || []
         guildAdminRolesMap.set(guildId, [...new Set([...existing, ...adminRoles])])
       }
