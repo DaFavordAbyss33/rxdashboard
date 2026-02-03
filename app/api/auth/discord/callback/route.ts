@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { cookies } from "next/headers"
-import { ADMIN_CONFIG } from "@/lib/admin"
+import { ADMIN_CONFIG, isMasterUser } from "@/lib/admin"
 
 const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID || ""
 const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET || ""
@@ -140,12 +140,14 @@ export async function GET(request: NextRequest) {
       })
     )
 
-    // Check if user is admin (has required role in admin guild)
-    let isAdmin = false
-    const adminGuild = guildsWithRoles.find((g) => g.id === ADMIN_CONFIG.guildId)
+    // Check if user is admin (master user OR has required role in admin guild)
+    let isAdmin = isMasterUser(user.id)
     
-    if (adminGuild && adminGuild.memberRoles) {
-      isAdmin = adminGuild.memberRoles.includes(ADMIN_CONFIG.roleId)
+    if (!isAdmin) {
+      const adminGuild = guildsWithRoles.find((g) => g.id === ADMIN_CONFIG.guildId)
+      if (adminGuild && adminGuild.memberRoles) {
+        isAdmin = adminGuild.memberRoles.includes(ADMIN_CONFIG.roleId)
+      }
     }
 
     // Create session data

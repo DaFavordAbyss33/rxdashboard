@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { cookies } from "next/headers"
 import { getBotDatabase, type BotId } from "@/lib/mongodb"
+import { isMasterUser } from "@/lib/admin"
 
 export const dynamic = "force-dynamic"
 
@@ -41,10 +42,7 @@ export async function GET(
       )
     }
 
-    // Get user's guild IDs from the session
-    const userGuildIds = userGuilds.map((g: { id: string }) => g.id)
-
-    // Connect to MongoDB for this bot and find guilds where user has admin roles
+    // Connect to MongoDB for this bot
     const db = await getBotDatabase(botId as BotId)
     
     if (!db) {
@@ -52,8 +50,27 @@ export async function GET(
       return NextResponse.json({
         success: true,
         adminGuildIds: [],
+        isMaster: isMasterUser(userId),
       })
     }
+
+    // Master user gets access to ALL guilds where the bot is installed
+    if (isMasterUser(userId)) {
+      const allGuildConfigs = await db.collection("guildConfigs")
+        .find({ botId })
+        .toArray()
+      
+      const allGuildIds = allGuildConfigs.map(config => config.guildId)
+      
+      return NextResponse.json({
+        success: true,
+        adminGuildIds: allGuildIds,
+        isMaster: true,
+      })
+    }
+
+    // Get user's guild IDs from the session
+    const userGuildIds = userGuilds.map((g: { id: string }) => g.id)
     
     // Find all guild configs for this bot where the user might have an admin role
     const guildConfigs = await db.collection("guildConfigs")
@@ -85,6 +102,7 @@ export async function GET(
     return NextResponse.json({
       success: true,
       adminGuildIds,
+      isMaster: false,
     })
   } catch (error) {
     console.error("Failed to fetch admin guilds:", error)

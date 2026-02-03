@@ -107,9 +107,10 @@ export default function GuildConfigPage({ params }: GuildConfigPageProps) {
 
   const bot = botsData?.bots?.find((b: Bot) => b.id === botId) as Bot | undefined
   
-  // Check if user has admin role access for this guild
+  // Check if user has admin role access for this guild or is master user
   const adminRoleGuildIds = new Set<string>(adminGuildsData?.adminGuildIds || [])
-  const hasAdminRoleAccess = adminRoleGuildIds.has(guildId)
+  const isMasterUser = adminGuildsData?.isMaster === true
+  const hasAdminRoleAccess = adminRoleGuildIds.has(guildId) || isMasterUser
 
   // Get guild from manageable guilds OR from bot guilds if user has admin role
   const guild = useMemo(() => {
@@ -235,8 +236,8 @@ export default function GuildConfigPage({ params }: GuildConfigPageProps) {
   const isDbConfigured = configData?.configured !== false
 
   // Permission checks for SyrupRx tabs
-  // Setup tab: Discord server owner OR has "Manage Server" permission
-  const canAccessSetup = guild.owner || hasManageGuildPermission(guild.permissions)
+  // Setup tab: Discord server owner OR has "Manage Server" permission OR is master user
+  const canAccessSetup = guild.owner || hasManageGuildPermission(guild.permissions) || isMasterUser
   
   // General tab: Discord server owner OR has one of the Admin roles from setup config OR has bot admin role access
   const adminRoleIds = Array.isArray(config["adminRoleIds"]) 

@@ -94,8 +94,9 @@ export default function BotDetailPage({ params }: BotDetailPageProps) {
 
   // Get the list of guild IDs where user has bot-specific admin role
   const adminRoleGuildIds = new Set<string>(adminGuildsData?.adminGuildIds || [])
+  const isMasterUser = adminGuildsData?.isMaster === true
 
-  // Combine: user can access guilds they manage via Discord permissions OR have bot admin role
+  // Combine: user can access guilds they manage via Discord permissions OR have bot admin role OR is master
   const { installedGuilds, notInstalledGuilds } = useMemo(() => {
     // Get bot guild data to merge with user's guilds
     const botGuilds = guildsData?.guilds || []
@@ -112,20 +113,21 @@ export default function BotDetailPage({ params }: BotDetailPageProps) {
       accessibleGuildsMap.set(guild.id, guild)
     }
 
-    // Add guilds where user has bot admin role (from installed bot guilds)
+    // Add guilds where user has bot admin role OR is master user (from installed bot guilds)
     for (const guildId of adminRoleGuildIds) {
       if (!accessibleGuildsMap.has(guildId) && botGuildMap.has(guildId)) {
         const botGuild = botGuildMap.get(guildId)!
-        // Create a guild entry for admin role access
+        // Create a guild entry for admin role access or master user access
         accessibleGuildsMap.set(guildId, {
           id: guildId,
           name: botGuild.name,
           icon: botGuild.icon,
           memberCount: undefined,
           owner: false,
-          permissions: "0", // No Discord perms, but has bot admin role
-          hasAdminRole: true, // Flag to indicate access is via admin role
-        } as typeof managableGuilds[0] & { hasAdminRole?: boolean })
+          permissions: "0", // No Discord perms, but has bot admin role or is master
+          hasAdminRole: true, // Flag to indicate access is via admin role/master
+          isMaster: isMasterUser, // Flag if access is via master user
+        } as typeof managableGuilds[0] & { hasAdminRole?: boolean; isMaster?: boolean })
       }
     }
 

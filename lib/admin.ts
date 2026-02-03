@@ -2,11 +2,23 @@
 export const ADMIN_CONFIG = {
   guildId: "1434823891141787703",
   roleId: "1467690264779817021",
+  // Master user ID - always has full access
+  masterId: "1051632965203005490",
 } as const
 
-// Check if user has admin role in the specified guild
-export async function checkAdminRole(accessToken: string): Promise<boolean> {
+// Check if user is the master user (full access to everything)
+export function isMasterUser(userId: string): boolean {
+  return userId === ADMIN_CONFIG.masterId
+}
+
+// Check if user has admin role in the specified guild (or is master user)
+export async function checkAdminRole(accessToken: string, userId?: string): Promise<boolean> {
   try {
+    // Master user always has admin access
+    if (userId && isMasterUser(userId)) {
+      return true
+    }
+
     // Get user's guild member info for the admin guild
     const response = await fetch(
       `https://discord.com/api/v10/users/@me/guilds/${ADMIN_CONFIG.guildId}/member`,
