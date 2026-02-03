@@ -35,6 +35,12 @@ export async function GET(
     const userId = session.user?.id
     const userGuilds = session.guilds || []
 
+    console.log("[v0] admin-guilds: userId:", userId, "userGuilds count:", userGuilds.length)
+    
+    // Log guilds with their memberRoles for debugging
+    const guildsWithRoles = userGuilds.filter((g: { id: string; memberRoles?: string[] }) => g.memberRoles && g.memberRoles.length > 0)
+    console.log("[v0] admin-guilds: guilds with roles:", guildsWithRoles.length, "guilds:", guildsWithRoles.map((g: { id: string; name: string; memberRoles?: string[] }) => ({ id: g.id, name: g.name, rolesCount: g.memberRoles?.length || 0 })))
+
     if (!userId) {
       return NextResponse.json(
         { success: false, error: "User not found in session", adminGuildIds: [] },
@@ -105,6 +111,8 @@ export async function GET(
       })
       .toArray()
 
+    console.log("[v0] admin-guilds: found", guildConfigs.length, "guild configs for user's guilds")
+
     // For each guild, check if user has one of the admin roles
     const adminGuildIds: string[] = []
     
@@ -116,10 +124,16 @@ export async function GET(
       const guildData = userGuilds.find((g: { id: string; memberRoles?: string[] }) => g.id === configDoc.guildId)
       const userRoles = guildData?.memberRoles || []
 
-      if (adminRoleIds.length === 0) continue
+      console.log("[v0] admin-guilds: checking guild", configDoc.guildId, "adminRoleIds:", adminRoleIds, "userRoles:", userRoles)
+
+      if (adminRoleIds.length === 0) {
+        console.log("[v0] admin-guilds: no admin roles configured for guild", configDoc.guildId)
+        continue
+      }
 
       // Check if user has any of the admin roles
       const hasAdminRole = adminRoleIds.some((roleId: string) => userRoles.includes(roleId))
+      console.log("[v0] admin-guilds: hasAdminRole:", hasAdminRole, "for guild", configDoc.guildId)
       
       if (hasAdminRole) {
         adminGuildIds.push(configDoc.guildId)
