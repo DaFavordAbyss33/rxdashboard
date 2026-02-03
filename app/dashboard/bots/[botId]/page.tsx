@@ -24,6 +24,10 @@ import {
   Crown,
   Lock,
   RefreshCw,
+  ChevronLeft,
+  ChevronRight,
+  Eye,
+  Shield,
 } from "lucide-react"
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json())
@@ -65,6 +69,9 @@ export default function BotDetailPage({ params }: BotDetailPageProps) {
   const { botId } = use(params)
   const { managableGuilds, user } = useAuth()
   const [searchQuery, setSearchQuery] = useState("")
+  const [showAllGuilds, setShowAllGuilds] = useState(false)
+  const [allGuildsPage, setAllGuildsPage] = useState(1)
+  const ALL_GUILDS_PER_PAGE = 10
 
   // Fetch bot data from API
   const { data: botsData, error: botsError, isLoading: botsLoading } = useSWR(
@@ -95,9 +102,12 @@ export default function BotDetailPage({ params }: BotDetailPageProps) {
   // Get the list of guild IDs where user has bot-specific admin role
   const adminRoleGuildIds = new Set<string>(adminGuildsData?.adminGuildIds || [])
   const isMasterUser = adminGuildsData?.isMaster === true
+  // All guild IDs where bot is installed (only available for master users)
+  const allInstalledGuildIds = new Set<string>(adminGuildsData?.allGuildIds || [])
 
-  // Combine: user can access guilds they manage via Discord permissions OR have bot admin role OR is master
-  const { installedGuilds, notInstalledGuilds } = useMemo(() => {
+  // Combine: user can access guilds they manage via Discord permissions OR have bot admin role
+  // For master users, we separate "permissioned" guilds from "all other" guilds
+  const { installedGuilds, notInstalledGuilds, allOtherGuilds } = useMemo(() => {
     // Get bot guild data to merge with user's guilds
     const botGuilds = guildsData?.guilds || []
     
@@ -107,35 +117,56 @@ export default function BotDetailPage({ params }: BotDetailPageProps) {
       botGuildMap.set(g.id, g)
     }
 
-    // Start with manageable guilds (Discord perms)
+    // Start with manageable guilds (Discord perms: Owner, Administrator, Manage Guild)
     const accessibleGuildsMap = new Map<string, typeof managableGuilds[0]>()
     for (const guild of managableGuilds) {
       accessibleGuildsMap.set(guild.id, guild)
     }
 
-    // Add guilds where user has bot admin role OR is master user (from installed bot guilds)
+    // Add guilds where user has bot admin role (from Setup tab)
     for (const guildId of adminRoleGuildIds) {
       if (!accessibleGuildsMap.has(guildId) && botGuildMap.has(guildId)) {
         const botGuild = botGuildMap.get(guildId)!
-        // Create a guild entry for admin role access or master user access
+        // Create a guild entry for admin role access
         accessibleGuildsMap.set(guildId, {
           id: guildId,
           name: botGuild.name,
           icon: botGuild.icon,
           memberCount: undefined,
           owner: false,
-          permissions: "0", // No Discord perms, but has bot admin role or is master
-          hasAdminRole: true, // Flag to indicate access is via admin role/master
-          isMaster: isMasterUser, // Flag if access is via master user
-        } as typeof managableGuilds[0] & { hasAdminRole?: boolean; isMaster?: boolean })
+          permissions: "0", // No Discord perms, but has bot admin role
+          hasAdminRole: true, // Flag to indicate access is via admin role
+        } as typeof managableGuilds[0] & { hasAdminRole?: boolean })
       }
     }
 
     const allAccessibleGuilds = Array.from(accessibleGuildsMap.values())
     const installed = allAccessibleGuilds.filter((guild) => installedGuildIds.has(guild.id))
     const notInstalled = allAccessibleGuilds.filter((guild) => !installedGuildIds.has(guild.id))
-    return { installedGuilds: installed, notInstalledGuilds: notInstalled }
-  }, [managableGuilds, installedGuildIds, adminRoleGuildIds, guildsData?.guilds])
+    
+    // For master users: get all OTHER guilds (not in permissioned list)
+    const permissionedGuildIds = new Set(allAccessibleGuilds.map(g => g.id))
+    const otherGuilds: Array<typeof managableGuilds[0] & { hasAdminRole?: boolean; isMasterOnly?: boolean }> = []
+    
+    if (isMasterUser) {
+      for (const guildId of allInstalledGuildIds) {
+        if (!permissionedGuildIds.has(guildId) && botGuildMap.has(guildId)) {
+          const botGuild = botGuildMap.get(guildId)!
+          otherGuilds.push({
+            id: guildId,
+            name: botGuild.name,
+            icon: botGuild.icon,
+            memberCount: undefined,
+            owner: false,
+            permissions: "0",
+            isMasterOnly: true, // Flag to indicate this is master-only access
+          } as typeof managableGuilds[0] & { isMasterOnly?: boolean })
+        }
+      }
+    }
+    
+    return { installedGuilds: installed, notInstalledGuilds: notInstalled, allOtherGuilds: otherGuilds }
+  }, [managableGuilds, installedGuildIds, adminRoleGuildIds, guildsData?.guilds, isMasterUser, allInstalledGuildIds])
 
   // Filter by search
   const filterGuilds = (guilds: typeof managableGuilds) =>
@@ -371,6 +402,112 @@ export default function BotDetailPage({ params }: BotDetailPageProps) {
             </TabsContent>
           )}
         </Tabs>
+
+        {/* Master User: Show All Guilds Button & Section */}
+        {isMasterUser && allOtherGuilds.length > 0 && (
+          <div className="border-t border-border p-6">
+            {!showAllGuilds ? (
+              <Button
+                variant="outline"
+                className="w-full gap-2"
+                onClick={() => {
+                  setShowAllGuilds(true)
+                  setAllGuildsPage(1)
+                }}
+              >
+                <Eye className="h-4 w-4" />
+                Show All Guilds ({allOtherGuilds.length} more)
+              </Button>
+            ) : (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Shield className="h-5 w-5 text-primary" />
+                    <h4 className="font-semibold text-card-foreground">All Other Guilds</h4>
+                    <Badge variant="secondary" className="text-xs">
+                      Master Access
+                    </Badge>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setShowAllGuilds(false)}
+                  >
+                    Hide
+                  </Button>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  These guilds are accessible via master user privileges only.
+                </p>
+                
+                {/* Guild List */}
+                <div className="space-y-2">
+                  {(() => {
+                    const filteredOtherGuilds = filterGuilds(allOtherGuilds)
+                    const totalPages = Math.ceil(filteredOtherGuilds.length / ALL_GUILDS_PER_PAGE)
+                    const startIndex = (allGuildsPage - 1) * ALL_GUILDS_PER_PAGE
+                    const paginatedGuilds = filteredOtherGuilds.slice(startIndex, startIndex + ALL_GUILDS_PER_PAGE)
+                    
+                    return (
+                      <>
+                        {paginatedGuilds.length === 0 ? (
+                          <div className="rounded-lg border border-dashed border-border bg-secondary/30 p-8 text-center">
+                            <p className="text-muted-foreground">
+                              No guilds match your search
+                            </p>
+                          </div>
+                        ) : (
+                          paginatedGuilds.map((guild) => (
+                            <GuildRow
+                              key={guild.id}
+                              guildId={guild.id}
+                              guildName={guild.name}
+                              memberCount={guild.memberCount}
+                              isOwner={false}
+                              isInstalled
+                              botId={botId}
+                              isMasterOnly
+                            />
+                          ))
+                        )}
+                        
+                        {/* Pagination */}
+                        {totalPages > 1 && (
+                          <div className="flex items-center justify-between pt-4">
+                            <p className="text-sm text-muted-foreground">
+                              Showing {startIndex + 1}-{Math.min(startIndex + ALL_GUILDS_PER_PAGE, filteredOtherGuilds.length)} of {filteredOtherGuilds.length} guilds
+                            </p>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setAllGuildsPage(p => Math.max(1, p - 1))}
+                                disabled={allGuildsPage === 1}
+                              >
+                                <ChevronLeft className="h-4 w-4" />
+                              </Button>
+                              <span className="text-sm text-muted-foreground">
+                                Page {allGuildsPage} of {totalPages}
+                              </span>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setAllGuildsPage(p => Math.min(totalPages, p + 1))}
+                                disabled={allGuildsPage === totalPages}
+                              >
+                                <ChevronRight className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    )
+                  })()}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )
@@ -385,6 +522,7 @@ interface GuildRowProps {
   botId: string
   inviteUrl?: string
   hasAdminRole?: boolean
+  isMasterOnly?: boolean
 }
 
 function GuildRow({
@@ -396,6 +534,7 @@ function GuildRow({
   botId,
   inviteUrl,
   hasAdminRole,
+  isMasterOnly,
 }: GuildRowProps) {
   return (
     <div className="flex items-center justify-between rounded-lg border border-border bg-secondary/30 p-4 transition-colors hover:bg-secondary/50">
@@ -414,6 +553,11 @@ function GuildRow({
             {!isOwner && hasAdminRole && (
               <Badge variant="secondary" className="text-xs">
                 Admin Role
+              </Badge>
+            )}
+            {!isOwner && !hasAdminRole && isMasterOnly && (
+              <Badge variant="secondary" className="text-xs bg-primary/20 text-primary">
+                Master Access
               </Badge>
             )}
           </div>
