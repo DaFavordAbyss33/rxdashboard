@@ -65,6 +65,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    console.log("[v0] Starting token exchange...")
     // Exchange code for access token
     const tokenResponse = await fetch("https://discord.com/api/oauth2/token", {
       method: "POST",
@@ -87,6 +88,7 @@ export async function GET(request: NextRequest) {
     }
 
     const tokens: DiscordTokenResponse = await tokenResponse.json()
+    console.log("[v0] Token exchange successful, fetching user info...")
 
     // Fetch user info
     const userResponse = await fetch("https://discord.com/api/users/@me", {
@@ -101,6 +103,7 @@ export async function GET(request: NextRequest) {
     }
 
     const user: DiscordUser = await userResponse.json()
+    console.log("[v0] User fetched:", user.username, "ID:", user.id)
 
     // Fetch user's guilds
     const guildsResponse = await fetch("https://discord.com/api/users/@me/guilds", {
@@ -112,6 +115,9 @@ export async function GET(request: NextRequest) {
     let guilds: DiscordGuild[] = []
     if (guildsResponse.ok) {
       guilds = await guildsResponse.json()
+      console.log("[v0] Guilds fetched:", guilds.length)
+    } else {
+      console.log("[v0] Failed to fetch guilds:", guildsResponse.status)
     }
 
     // Fetch member roles for ALL guilds (needed for bot admin role checks)
@@ -177,14 +183,40 @@ export async function GET(request: NextRequest) {
     // Store session in HTTP-only cookie using Response headers (more reliable)
     const sessionJson = JSON.stringify(sessionData)
     
-    console.log("[v0] Creating session for user:", user.username, "isAdmin:", isAdmin, "sessionSize:", sessionJson.length)
+    // Check if session data is too large for a cookie (browsers limit ~4KB)
+    const sessionSizeKB = sessionJson.length / 1024
+    console.log("[v0] Creating session for user:", user.username, "isAdmin:", isAdmin, "sessionSize:", sessionJson.length, "bytes (", sessionSizeKB.toFixed(2), "KB)")
+    
+    // If session is too large, strip out non-essential data
+    let finalSessionJson = sessionJson
+    if (sessionSizeKB > 3.5) {
+      console.log("[v0] Session too large, stripping guild memberRoles")
+      // Keep only essential guild data to reduce size
+      const minimalSessionData = {
+        ...sessionData,
+        guilds: sessionData.guilds.map((g: { id: string; name: string; icon: string | null; owner: boolean; permissions: string; memberRoles: string[] }) => ({
+          id: g.id,
+          name: g.name,
+          icon: g.icon,
+          owner: g.owner,
+          permissions: g.permissions,
+          memberRoles: g.memberRoles, // Keep roles as they're needed for admin checks
+        })),
+      }
+      finalSessionJson = JSON.stringify(minimalSessionData)
+      console.log("[v0] Reduced session size to:", finalSessionJson.length, "bytes")
+    }
 
     // Create redirect response with cookie set via headers
     const response = NextResponse.redirect(new URL("/dashboard/bots", NEXTAUTH_URL))
     
-    response.cookies.set("discord_session", sessionJson, {
+    // Always use secure in production (Vercel sets NODE_ENV=production)
+    const isProduction = NEXTAUTH_URL.startsWith("https://")
+    console.log("[v0] Setting cookie with secure:", isProduction, "NEXTAUTH_URL:", NEXTAUTH_URL)
+    
+    response.cookies.set("discord_session", finalSessionJson, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: isProduction,
       sameSite: "lax",
       maxAge: 60 * 60 * 24 * 7, // 7 days
       path: "/",
