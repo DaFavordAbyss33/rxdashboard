@@ -17,6 +17,7 @@ export async function GET() {
     redirect_uri: REDIRECT_URI,
     response_type: "code",
     scope: SCOPES,
+    prompt: "consent", // Force re-authorization to get new scopes
   })
 
   const discordAuthUrl = `https://discord.com/api/oauth2/authorize?${params.toString()}`
