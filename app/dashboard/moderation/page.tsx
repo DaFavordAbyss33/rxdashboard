@@ -51,7 +51,15 @@ export default function ModerationPage() {
 
   const isMaster = adminGuildsData?.isMaster === true
 
-  // Filter guilds where user has admin access AND bot is installed
+  // Helper to check if user has Discord manage guild permission
+  const hasManageGuildPermission = (permissions: string) => {
+    const perms = BigInt(permissions || 0)
+    const MANAGE_GUILD = BigInt(0x20)
+    const ADMINISTRATOR = BigInt(0x8)
+    return (perms & MANAGE_GUILD) === MANAGE_GUILD || (perms & ADMINISTRATOR) === ADMINISTRATOR
+  }
+
+  // Filter guilds where user has access (admin role OR Discord permissions) AND bot is installed
   const accessibleGuilds = useMemo(() => {
     const adminGuildIds = new Set<string>(adminGuildsData?.adminGuildIds || [])
     const botGuilds: BotGuild[] = botGuildsData?.guilds || []
@@ -71,10 +79,17 @@ export default function ModerationPage() {
       }))
     }
 
-    // Regular users: filter to guilds they have admin access to AND bot is installed
+    // Regular users: filter to guilds where:
+    // 1. They have admin role access (from bot config), OR
+    // 2. They are the owner, OR
+    // 3. They have Discord MANAGE_GUILD/ADMINISTRATOR permission
+    // AND the bot is installed in that guild
     return allGuilds
       .filter((guild) => {
-        const hasAccess = adminGuildIds.has(guild.id)
+        const hasAdminRole = adminGuildIds.has(guild.id)
+        const isOwner = guild.owner === true
+        const hasDiscordPerms = hasManageGuildPermission(guild.permissions)
+        const hasAccess = hasAdminRole || isOwner || hasDiscordPerms
         const isInstalled = installedGuildIds.has(guild.id)
         return hasAccess && isInstalled
       })
