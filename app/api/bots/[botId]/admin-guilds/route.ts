@@ -54,18 +54,42 @@ export async function GET(
       })
     }
 
-    // Master user gets access to ALL guilds where the bot is installed
+    // Master user: return both permissioned guilds AND all guilds separately
     if (isMasterUser(userId)) {
-      // Use "mapleguildconfigs" collection - Mongoose model name MapleGuildConfig becomes mapleguildconfigs
+      // Get user's guild IDs from the session
+      const userGuildIds = userGuilds.map((g: { id: string }) => g.id)
+      
+      // Get all guild configs (for all guilds list)
       const allGuildConfigs = await db.collection("mapleguildconfigs")
         .find({})
         .toArray()
       
       const allGuildIds = allGuildConfigs.map(config => config.guildId)
       
+      // Find guild configs where user is in the guild (to check admin roles)
+      const userGuildConfigs = allGuildConfigs.filter(config => 
+        userGuildIds.includes(config.guildId)
+      )
+      
+      // Check which guilds user has admin role in
+      const adminRoleGuildIds: string[] = []
+      for (const configDoc of userGuildConfigs) {
+        const adminRoleIds = configDoc.adminRoleIds || []
+        if (adminRoleIds.length === 0) continue
+        
+        const guildData = userGuilds.find((g: { id: string; memberRoles?: string[] }) => g.id === configDoc.guildId)
+        const userRoles = guildData?.memberRoles || []
+        
+        const hasAdminRole = adminRoleIds.some((roleId: string) => userRoles.includes(roleId))
+        if (hasAdminRole) {
+          adminRoleGuildIds.push(configDoc.guildId)
+        }
+      }
+      
       return NextResponse.json({
         success: true,
-        adminGuildIds: allGuildIds,
+        adminGuildIds: adminRoleGuildIds, // Guilds where master has admin role
+        allGuildIds, // All installed guilds (for "Show all" feature)
         isMaster: true,
       })
     }
