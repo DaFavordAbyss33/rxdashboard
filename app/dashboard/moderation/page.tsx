@@ -242,7 +242,7 @@ export default function ModerationPage() {
                   <SelectTrigger>
                     <SelectValue placeholder="Select a server" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="max-h-[300px] overflow-y-auto">
                     {paginatedGuilds.map((guild) => (
                       <SelectItem key={guild.id} value={guild.id}>
                         <div className="flex items-center gap-2">
