@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { cookies } from "next/headers"
-import clientPromise from "@/lib/mongodb"
+import { getBotDatabase, type BotId } from "@/lib/mongodb"
 
 export const dynamic = "force-dynamic"
 
@@ -44,9 +44,16 @@ export async function GET(
     // Get user's guild IDs from the session
     const userGuildIds = userGuilds.map((g: { id: string }) => g.id)
 
-    // Connect to MongoDB and find guilds where user has admin roles
-    const client = await clientPromise
-    const db = client.db()
+    // Connect to MongoDB for this bot and find guilds where user has admin roles
+    const db = await getBotDatabase(botId as BotId)
+    
+    if (!db) {
+      // No database configured for this bot - return empty list
+      return NextResponse.json({
+        success: true,
+        adminGuildIds: [],
+      })
+    }
     
     // Find all guild configs for this bot where the user might have an admin role
     const guildConfigs = await db.collection("guildConfigs")
