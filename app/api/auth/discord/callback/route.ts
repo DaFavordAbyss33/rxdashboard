@@ -174,9 +174,15 @@ export async function GET(request: NextRequest) {
       isAdmin,
     }
 
-    // Store session in HTTP-only cookie
-    const cookieStore = await cookies()
-    cookieStore.set("discord_session", JSON.stringify(sessionData), {
+    // Store session in HTTP-only cookie using Response headers (more reliable)
+    const sessionJson = JSON.stringify(sessionData)
+    
+    console.log("[v0] Creating session for user:", user.username, "isAdmin:", isAdmin, "sessionSize:", sessionJson.length)
+
+    // Create redirect response with cookie set via headers
+    const response = NextResponse.redirect(new URL("/dashboard/bots", NEXTAUTH_URL))
+    
+    response.cookies.set("discord_session", sessionJson, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
@@ -184,10 +190,9 @@ export async function GET(request: NextRequest) {
       path: "/",
     })
 
-    console.log("[v0] Session created for user:", user.username, "isAdmin:", isAdmin)
+    console.log("[v0] Session cookie set, redirecting to /dashboard/bots")
 
-    // Redirect to dashboard
-    return NextResponse.redirect(new URL("/dashboard/bots", NEXTAUTH_URL))
+    return response
   } catch (error) {
     console.error("[v0] OAuth callback error:", error)
     return NextResponse.redirect(new URL("/?error=callback_failed", NEXTAUTH_URL))
