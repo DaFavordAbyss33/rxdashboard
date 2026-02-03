@@ -278,14 +278,13 @@ export async function GET(request: NextRequest) {
     
     console.log("[v0] FINAL session size:", finalSessionJson.length, "bytes (", sessionSizeKB.toFixed(2), "KB), isAdmin:", isAdmin)
 
-    // Create redirect response with cookie set via headers
-    const response = NextResponse.redirect(new URL("/dashboard/bots", NEXTAUTH_URL))
-    
     // Always use secure in production (Vercel sets NODE_ENV=production)
     const isProduction = NEXTAUTH_URL.startsWith("https://")
     console.log("[v0] Setting cookie with secure:", isProduction, "NEXTAUTH_URL:", NEXTAUTH_URL)
     
-    response.cookies.set("discord_session", finalSessionJson, {
+    // Set cookie using the cookies() API first (more reliable in Next.js)
+    const cookieStore = await cookies()
+    cookieStore.set("discord_session", finalSessionJson, {
       httpOnly: true,
       secure: isProduction,
       sameSite: "lax",
@@ -293,8 +292,10 @@ export async function GET(request: NextRequest) {
       path: "/",
     })
 
-    console.log("[v0] Session cookie set, redirecting to /dashboard/bots")
+    console.log("[v0] Session cookie set via cookies() API, redirecting to /dashboard/bots")
 
+    // Create redirect response
+    const response = NextResponse.redirect(new URL("/dashboard/bots", NEXTAUTH_URL))
     return response
   } catch (error) {
     console.error("[v0] OAuth callback error:", error)
