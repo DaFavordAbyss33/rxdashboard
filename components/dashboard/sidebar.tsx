@@ -4,12 +4,13 @@ import Link from "next/link"
 import Image from "next/image"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
-import { LayoutDashboard, Settings, AlertTriangle, Server, Bot, Crown, Shield } from "lucide-react"
+import { LayoutDashboard, Settings, AlertTriangle, Server, Bot, Crown, Shield, Gavel } from "lucide-react"
 import { useAuth } from "@/lib/auth-context"
 
 const navItems = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard, adminOnly: true },
   { href: "/dashboard/bots", label: "Bots", icon: Bot, adminOnly: false },
+  { href: "/dashboard/moderation", label: "Moderation", icon: Gavel, adminOnly: false },
   { href: "/dashboard/subscriptions", label: "Subscriptions", icon: Crown, adminOnly: false },
   { href: "/dashboard/incidents", label: "Incidents", icon: AlertTriangle, adminOnly: false },
   { href: "/dashboard/guilds", label: "My Guilds", icon: Server, adminOnly: false },
