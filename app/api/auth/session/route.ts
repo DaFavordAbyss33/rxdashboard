@@ -15,7 +15,6 @@ export async function GET() {
     // Check if session has expired
     if (session.expiresAt && Date.now() > session.expiresAt) {
       // Token expired, clear session
-      console.log("[v0] Session expired, clearing")
       cookieStore.delete("discord_session")
       return NextResponse.json({ user: null, isAuthenticated: false })
     }
@@ -42,8 +41,7 @@ export async function GET() {
       isAdmin: session.isAdmin,
       isAuthenticated: true,
     })
-  } catch (error) {
-    console.error("[v0] Session parse error:", error)
+  } catch {
     cookieStore.delete("discord_session")
     return NextResponse.json({ user: null, isAuthenticated: false })
   }
