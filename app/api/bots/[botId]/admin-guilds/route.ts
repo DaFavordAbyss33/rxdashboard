@@ -73,14 +73,21 @@ export async function GET(
     // Get user's guild IDs from the session
     const userGuildIds = userGuilds.map((g: { id: string }) => g.id)
     
-    // Find all guild configs for this bot where the user might have an admin role
-    // Use "configs" collection - same as the config route that saves adminRoleIds
+    console.log("[v0] admin-guilds: User is in guilds:", userGuildIds)
+    
+    // Find all guild configs for guilds the user is in
+    // Note: Each bot has its own database, so we don't need to filter by botId
     const guildConfigs = await db.collection("configs")
       .find({
-        botId,
         guildId: { $in: userGuildIds }
       })
       .toArray()
+
+    console.log("[v0] admin-guilds: Found configs:", guildConfigs.map(c => ({ 
+      guildId: c.guildId, 
+      hasConfig: !!c.config,
+      adminRoleIds: c.config?.adminRoleIds 
+    })))
 
     // For each guild, check if user has one of the admin roles
     const adminGuildIds: string[] = []
@@ -88,14 +95,22 @@ export async function GET(
     for (const configDoc of guildConfigs) {
       // adminRoleIds is stored at configDoc.config.adminRoleIds
       const adminRoleIds = configDoc.config?.adminRoleIds || []
-      if (adminRoleIds.length === 0) continue
-
+      
       // Get user's roles in this guild from session
-      const guildData = userGuilds.find((g: { id: string }) => g.id === configDoc.guildId)
+      const guildData = userGuilds.find((g: { id: string; memberRoles?: string[] }) => g.id === configDoc.guildId)
       const userRoles = guildData?.memberRoles || []
+      
+      console.log("[v0] admin-guilds: Checking guild", configDoc.guildId, {
+        adminRoleIds,
+        userRoles,
+      })
+
+      if (adminRoleIds.length === 0) continue
 
       // Check if user has any of the admin roles
       const hasAdminRole = adminRoleIds.some((roleId: string) => userRoles.includes(roleId))
+      console.log("[v0] admin-guilds: User hasAdminRole:", hasAdminRole)
+      
       if (hasAdminRole) {
         adminGuildIds.push(configDoc.guildId)
       }
