@@ -77,8 +77,7 @@ async function sendDM(botId: BotId, channelId: string, content: string) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        content,
-        // Add an embed for better visibility
+        // Only send the embed, no plain text content
         embeds: [{
           title: "Urgent Notice from RxSystems",
           description: content,
