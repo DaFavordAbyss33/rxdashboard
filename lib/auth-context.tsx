@@ -22,6 +22,7 @@ interface AuthContextType {
   login: () => void
   logout: () => void
   managableGuilds: Guild[]
+  allGuilds: SessionGuild[] // All guilds user is in, with memberRoles
   refreshSession: () => Promise<void>
   refreshGuilds: () => Promise<void>
   guildsLoading: boolean
@@ -218,6 +219,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         login,
         logout,
         managableGuilds,
+        allGuilds: guilds, // Expose all guilds with memberRoles
         refreshSession,
         refreshGuilds,
         guildsLoading,

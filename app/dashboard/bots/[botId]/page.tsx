@@ -67,7 +67,7 @@ interface BotDetailPageProps {
 
 export default function BotDetailPage({ params }: BotDetailPageProps) {
   const { botId } = use(params)
-  const { managableGuilds, user } = useAuth()
+  const { managableGuilds, allGuilds, user } = useAuth()
   const [searchQuery, setSearchQuery] = useState("")
   const [showAllGuilds, setShowAllGuilds] = useState(false)
   const [allGuildsPage, setAllGuildsPage] = useState(1)
@@ -87,28 +87,44 @@ export default function BotDetailPage({ params }: BotDetailPageProps) {
     { refreshInterval: 60000 }
   )
 
-  // Fetch guilds where user has admin role for this bot (not just Discord permissions)
+  // Fetch admin role configs for this bot (guildId -> adminRoleIds mapping)
   const { data: adminGuildsData, error: adminGuildsError, isLoading: adminGuildsLoading } = useSWR(
     user ? `/api/bots/${botId}/admin-guilds` : null,
     fetcher,
     { refreshInterval: 60000 }
   )
-  
-  // Debug logging for admin guilds
-  console.log("[v0] Bot page - user:", user?.username, "adminGuildsData:", adminGuildsData, "adminGuildsError:", adminGuildsError, "adminGuildsLoading:", adminGuildsLoading)
 
   const bot = botsData?.bots?.find((b: Bot) => b.id === botId) as Bot | undefined
   const installedGuildIds = new Set(
     (guildsData?.guilds || []).map((g: BotGuild) => g.id)
   )
 
-  // Get the list of guild IDs where user has bot-specific admin role
-  const adminRoleGuildIds = new Set<string>(adminGuildsData?.adminGuildIds || [])
+  // Client-side role matching: check user's roles against admin role configs
+  const adminRoleGuildIds = useMemo(() => {
+    const guildAdminRoles = adminGuildsData?.guildAdminRoles || {}
+    const matchedGuildIds = new Set<string>()
+    
+    // For each guild the user is in, check if they have any of the configured admin roles
+    for (const guild of allGuilds) {
+      const adminRoleIds = guildAdminRoles[guild.id]
+      if (!adminRoleIds || adminRoleIds.length === 0) continue
+      
+      const userRoles = guild.memberRoles || []
+      const hasAdminRole = adminRoleIds.some((roleId: string) => userRoles.includes(roleId))
+      
+      if (hasAdminRole) {
+        matchedGuildIds.add(guild.id)
+      }
+    }
+    
+    return matchedGuildIds
+  }, [adminGuildsData?.guildAdminRoles, allGuilds])
+
   const isMasterUser = adminGuildsData?.isMaster === true
   // All guild IDs where bot is installed (only available for master users)
   const allInstalledGuildIds = new Set<string>(adminGuildsData?.allGuildIds || [])
   
-  console.log("[v0] Bot page - adminRoleGuildIds:", Array.from(adminRoleGuildIds), "managableGuilds count:", managableGuilds.length)
+  console.log("[v0] Bot page - adminRoleGuildIds:", Array.from(adminRoleGuildIds), "allGuilds count:", allGuilds.length, "guildAdminRoles:", adminGuildsData?.guildAdminRoles)
 
   // Combine: user can access guilds they manage via Discord permissions OR have bot admin role
   // For master users, we separate "permissioned" guilds from "all other" guilds
