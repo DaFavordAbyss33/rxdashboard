@@ -181,58 +181,85 @@ export async function GET(request: NextRequest) {
     }
 
     // Store session in HTTP-only cookie using Response headers (more reliable)
-    // Check if session data is too large for a cookie (browsers limit ~4KB)
-    let finalSessionData = sessionData
-    let sessionJson = JSON.stringify(finalSessionData)
-    let sessionSizeKB = sessionJson.length / 1024
+    // IMPORTANT: Cookies have a ~4KB size limit. We MUST keep the session small.
+    // Only store essential user data and minimal guild info.
     
-    console.log("[v0] Initial session size:", sessionJson.length, "bytes (", sessionSizeKB.toFixed(2), "KB)")
+    // Create minimal session - only essential data
+    const minimalSessionData = {
+      user: sessionData.user,
+      guilds: sessionData.guilds.map((g: { id: string; name: string; icon: string | null; owner: boolean; permissions: string; memberRoles: string[] }) => ({
+        id: g.id,
+        name: g.name,
+        icon: g.icon,
+        owner: g.owner,
+        permissions: g.permissions,
+        memberRoles: g.memberRoles,
+      })),
+      accessToken: sessionData.accessToken,
+      refreshToken: sessionData.refreshToken,
+      expiresAt: sessionData.expiresAt,
+      isAdmin: sessionData.isAdmin,
+    }
     
-    // If session is too large, progressively strip data
+    let finalSessionJson = JSON.stringify(minimalSessionData)
+    let sessionSizeKB = finalSessionJson.length / 1024
+    console.log("[v0] Initial session size:", finalSessionJson.length, "bytes (", sessionSizeKB.toFixed(2), "KB)")
+    
+    // If still too large, progressively strip data
     if (sessionSizeKB > 3.5) {
-      console.log("[v0] Session too large, removing memberRoles from guilds")
-      // First: remove memberRoles (biggest data)
-      finalSessionData = {
-        ...sessionData,
-        guilds: sessionData.guilds.map((g) => ({
+      console.log("[v0] Session too large, removing memberRoles from non-essential guilds")
+      // Only keep memberRoles for guilds where user has admin/manage permissions
+      const MANAGE_GUILD = 0x20
+      const ADMINISTRATOR = 0x8
+      
+      const strippedGuilds = sessionData.guilds.map((g: { id: string; name: string; icon: string | null; owner: boolean; permissions: string; memberRoles: string[] }) => {
+        const perms = parseInt(g.permissions)
+        const hasManagePerms = g.owner || (perms & ADMINISTRATOR) !== 0 || (perms & MANAGE_GUILD) !== 0
+        return {
           id: g.id,
           name: g.name,
           icon: g.icon,
           owner: g.owner,
           permissions: g.permissions,
-          memberRoles: [], // Strip roles to save space
-        })),
-      }
-      sessionJson = JSON.stringify(finalSessionData)
-      sessionSizeKB = sessionJson.length / 1024
-      console.log("[v0] After removing roles:", sessionJson.length, "bytes (", sessionSizeKB.toFixed(2), "KB)")
+          memberRoles: hasManagePerms ? g.memberRoles : [], // Only keep roles for manageable guilds
+        }
+      })
+      
+      finalSessionJson = JSON.stringify({
+        ...minimalSessionData,
+        guilds: strippedGuilds,
+      })
+      sessionSizeKB = finalSessionJson.length / 1024
+      console.log("[v0] After stripping non-essential roles:", finalSessionJson.length, "bytes (", sessionSizeKB.toFixed(2), "KB)")
     }
     
-    // If still too large, limit number of guilds
+    // If STILL too large, only keep guilds with manage permissions
     if (sessionSizeKB > 3.5) {
-      console.log("[v0] Still too large, limiting to 50 guilds")
-      finalSessionData = {
-        ...finalSessionData,
-        guilds: finalSessionData.guilds.slice(0, 50),
-      }
-      sessionJson = JSON.stringify(finalSessionData)
-      sessionSizeKB = sessionJson.length / 1024
-      console.log("[v0] After limiting guilds:", sessionJson.length, "bytes (", sessionSizeKB.toFixed(2), "KB)")
+      console.log("[v0] Session STILL too large, keeping only manageable guilds")
+      const MANAGE_GUILD = 0x20
+      const ADMINISTRATOR = 0x8
+      
+      const manageableGuilds = sessionData.guilds.filter((g: { id: string; name: string; icon: string | null; owner: boolean; permissions: string; memberRoles: string[] }) => {
+        const perms = parseInt(g.permissions)
+        return g.owner || (perms & ADMINISTRATOR) !== 0 || (perms & MANAGE_GUILD) !== 0
+      }).map((g: { id: string; name: string; icon: string | null; owner: boolean; permissions: string; memberRoles: string[] }) => ({
+        id: g.id,
+        name: g.name,
+        icon: g.icon,
+        owner: g.owner,
+        permissions: g.permissions,
+        memberRoles: g.memberRoles,
+      }))
+      
+      finalSessionJson = JSON.stringify({
+        ...minimalSessionData,
+        guilds: manageableGuilds,
+      })
+      sessionSizeKB = finalSessionJson.length / 1024
+      console.log("[v0] After keeping only manageable guilds:", finalSessionJson.length, "bytes (", sessionSizeKB.toFixed(2), "KB), guilds:", manageableGuilds.length)
     }
     
-    // If STILL too large, remove tokens (user can re-auth if needed)
-    if (sessionSizeKB > 3.5) {
-      console.log("[v0] Still too large, removing tokens")
-      finalSessionData = {
-        ...finalSessionData,
-        accessToken: "",
-        refreshToken: "",
-      }
-      sessionJson = JSON.stringify(finalSessionData)
-      console.log("[v0] Final session size:", sessionJson.length, "bytes")
-    }
-    
-    const finalSessionJson = sessionJson
+    console.log("[v0] Final session size:", finalSessionJson.length, "bytes (", sessionSizeKB.toFixed(2), "KB)")
 
     // Create redirect response with cookie set via headers
     const response = NextResponse.redirect(new URL("/dashboard/bots", NEXTAUTH_URL))
