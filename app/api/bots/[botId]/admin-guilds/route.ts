@@ -2,11 +2,39 @@ import { NextResponse } from "next/server"
 import { cookies } from "next/headers"
 import { getBotDatabase, type BotId } from "@/lib/mongodb"
 import { isMasterUser } from "@/lib/admin"
+import { BOT_TOKENS } from "@/lib/discord"
 
 export const dynamic = "force-dynamic"
 
-// GET /api/bots/[botId]/admin-guilds - Get admin role configs for this bot
-// Returns a map of guildId -> adminRoleIds so the client can do role matching
+const DISCORD_API_BASE = "https://discord.com/api/v10"
+
+// Fetch user's roles in a guild using the BOT token (not user's OAuth token)
+// This works because the bot is in the guild and can access member data
+async function fetchMemberRolesWithBot(botToken: string, guildId: string, userId: string): Promise<string[]> {
+  try {
+    const response = await fetch(
+      `${DISCORD_API_BASE}/guilds/${guildId}/members/${userId}`,
+      {
+        headers: {
+          Authorization: `Bot ${botToken}`,
+        },
+      }
+    )
+    if (response.ok) {
+      const member = await response.json()
+      return member.roles || []
+    } else {
+      const errorText = await response.text()
+      console.log(`[v0] fetchMemberRolesWithBot: Error for guild ${guildId} user ${userId} - ${response.status}: ${errorText.substring(0, 100)}`)
+    }
+  } catch (err) {
+    console.error(`[v0] fetchMemberRolesWithBot: Exception for guild ${guildId}:`, err)
+  }
+  return []
+}
+
+// GET /api/bots/[botId]/admin-guilds - Get guilds where user has admin role
+// Uses the bot token to fetch member roles (more reliable than OAuth)
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ botId: string }> }
@@ -104,16 +132,63 @@ export async function GET(
       }
     }
 
+    // Get the bot token to fetch member roles
+    const botToken = BOT_TOKENS[botId as keyof typeof BOT_TOKENS]
+    
+    if (!botToken) {
+      console.log("[v0] admin-guilds: No bot token for", botId)
+      return NextResponse.json({
+        success: true,
+        adminGuildIds: [],
+        guildAdminRoles,
+        allGuildIds,
+        isMaster: isMasterUser(userId),
+      })
+    }
+
+    // For guilds that have admin roles configured, check if user has those roles
+    // Using the bot token to fetch member data (more reliable than user OAuth)
+    const adminGuildIds: string[] = []
+    const guildIdsToCheck = Object.keys(guildAdminRoles)
+    
+    console.log("[v0] admin-guilds: Checking", guildIdsToCheck.length, "guilds for user", userId)
+    
+    // Check roles in parallel (but limit concurrency to avoid rate limits)
+    const BATCH_SIZE = 10
+    for (let i = 0; i < guildIdsToCheck.length; i += BATCH_SIZE) {
+      const batch = guildIdsToCheck.slice(i, i + BATCH_SIZE)
+      const results = await Promise.all(
+        batch.map(async (guildId) => {
+          const adminRoleIds = guildAdminRoles[guildId]
+          const userRoles = await fetchMemberRolesWithBot(botToken, guildId, userId)
+          const hasAdminRole = adminRoleIds.some((roleId: string) => userRoles.includes(roleId))
+          
+          console.log("[v0] admin-guilds: Guild", guildId, "- userRoles:", userRoles.length, "adminRoles:", adminRoleIds.length, "hasAdmin:", hasAdminRole)
+          
+          return { guildId, hasAdminRole }
+        })
+      )
+      
+      for (const result of results) {
+        if (result.hasAdminRole) {
+          adminGuildIds.push(result.guildId)
+        }
+      }
+    }
+    
+    console.log("[v0] admin-guilds: Final adminGuildIds:", adminGuildIds)
+
     return NextResponse.json({
       success: true,
-      guildAdminRoles, // Map of guildId -> adminRoleIds for client-side matching
-      allGuildIds, // All guilds with configs (for master users)
+      adminGuildIds, // Guilds where user has admin role (server-side matched)
+      guildAdminRoles, // Also include for debugging/client use
+      allGuildIds,
       isMaster: isMasterUser(userId),
     })
   } catch (error) {
     console.error("Failed to fetch admin guilds:", error)
     return NextResponse.json(
-      { success: false, error: "Failed to fetch admin guilds", guildAdminRoles: {}, allGuildIds: [] },
+      { success: false, error: "Failed to fetch admin guilds", adminGuildIds: [], guildAdminRoles: {}, allGuildIds: [] },
       { status: 500 }
     )
   }
