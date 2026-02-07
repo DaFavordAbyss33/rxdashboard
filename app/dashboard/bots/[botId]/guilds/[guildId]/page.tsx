@@ -632,51 +632,58 @@ export default function GuildConfigPage({ params }: GuildConfigPageProps) {
                   </div>
                 </div>
 
-                {/* Owner Privileges */}
-                <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4">
+                {/* Owner Privileges - Only editable by guild owner or master user */}
+                <div className={`rounded-lg border p-4 ${guild.owner || isMasterUser ? "border-amber-500/30 bg-amber-500/5" : "border-border bg-secondary/20 opacity-60"}`}>
                   <div className="flex items-start gap-3">
-                    <Crown className="mt-0.5 h-5 w-5 text-amber-500" />
+                    <Crown className={`mt-0.5 h-5 w-5 ${guild.owner || isMasterUser ? "text-amber-500" : "text-muted-foreground"}`} />
                     <div className="flex-1 space-y-3">
                       <div>
-                        <Label className="text-sm font-medium text-amber-500">Owner Privileges</Label>
+                        <Label className={`text-sm font-medium ${guild.owner || isMasterUser ? "text-amber-500" : "text-muted-foreground"}`}>Owner Privileges</Label>
                         <p className="text-sm text-muted-foreground">
                           Discord user IDs that have access to this Setup tab. The server owner always has access automatically.
                           Use this for trusted co-owners or lead administrators who need to configure the bot.
                         </p>
                       </div>
-                      <Textarea
-                        placeholder="Enter Discord user IDs separated by commas or spaces (e.g., 123456789012345678, 987654321098765432)"
-                        value={
-                          Array.isArray(config["ownerUserIds"])
-                            ? (config["ownerUserIds"] as string[]).join(", ")
-                            : (config["ownerUserIds"] as string) ?? ""
-                        }
-                        onChange={(e) => {
-                          // Store raw string while typing so spaces and commas aren't stripped
-                          setConfig((prev) => ({
-                            ...prev,
-                            ownerUserIds: e.target.value,
-                          }))
-                        }}
-                        onBlur={(e) => {
-                          // Parse into clean array when user leaves the field
-                          const userIds = e.target.value
-                            .split(/[\s,]+/)
-                            .map((id) => id.trim())
-                            .filter((id) => id.length > 0)
-                          setConfig((prev) => ({
-                            ...prev,
-                            ownerUserIds: userIds,
-                          }))
-                        }}
-                        rows={2}
-                      />
-                      <div className="flex items-start gap-2 rounded-md bg-amber-500/10 p-2 text-xs text-amber-500">
-                        <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
-                        <span>
-                          Only assign this to highly trusted users. These users can modify all bot settings including API keys and admin roles.
-                        </span>
-                      </div>
+                      {guild.owner || isMasterUser ? (
+                        <>
+                          <Textarea
+                            placeholder="Enter Discord user IDs separated by commas or spaces (e.g., 123456789012345678, 987654321098765432)"
+                            value={
+                              Array.isArray(config["ownerUserIds"])
+                                ? (config["ownerUserIds"] as string[]).join(", ")
+                                : (config["ownerUserIds"] as string) ?? ""
+                            }
+                            onChange={(e) => {
+                              setConfig((prev) => ({
+                                ...prev,
+                                ownerUserIds: e.target.value,
+                              }))
+                            }}
+                            onBlur={(e) => {
+                              const userIds = e.target.value
+                                .split(/[\s,]+/)
+                                .map((id) => id.trim())
+                                .filter((id) => id.length > 0)
+                              setConfig((prev) => ({
+                                ...prev,
+                                ownerUserIds: userIds,
+                              }))
+                            }}
+                            rows={2}
+                          />
+                          <div className="flex items-start gap-2 rounded-md bg-amber-500/10 p-2 text-xs text-amber-500">
+                            <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+                            <span>
+                              Only assign this to highly trusted users. These users can modify all bot settings including API keys and admin roles.
+                            </span>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="flex items-center gap-2 rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+                          <Shield className="h-4 w-4" />
+                          <span>Only the server owner can modify Owner Privileges.</span>
+                        </div>
+                      )}
                       <p className="text-xs text-muted-foreground">
                         {Array.isArray(config["ownerUserIds"])
                           ? `${(config["ownerUserIds"] as string[]).length} user(s) configured`
