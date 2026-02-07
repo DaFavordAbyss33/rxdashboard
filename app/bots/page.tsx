@@ -188,6 +188,7 @@ export default function BotsPage() {
                             width={48}
                             height={48}
                             className="rounded-lg"
+                            style={{ width: "auto", height: "auto" }}
                           />
                         </div>
                       </div>
