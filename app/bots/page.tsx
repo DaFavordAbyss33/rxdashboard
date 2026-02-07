@@ -187,8 +187,7 @@ export default function BotsPage() {
                             alt={bot.name}
                             width={48}
                             height={48}
-                            className="rounded-lg"
-                            style={{ width: "auto", height: "auto" }}
+                            className="h-12 w-12 rounded-lg object-cover"
                           />
                         </div>
                       </div>
