@@ -46,12 +46,19 @@ async function verifyGuildPermission(guildId: string): Promise<boolean> {
     const mapleConfig = await db.collection("mapleguildconfigs").findOne({ guildId })
     const dashboardConfig = await db.collection("configs").findOne({ guildId })
     
-    // Collect admin role IDs AND owner role IDs from both sources
+    // Check ownerUserIds first (direct user ID match, no Discord API needed)
+    const ownerUserIds: string[] = []
+    if (mapleConfig?.ownerUserIds) ownerUserIds.push(...mapleConfig.ownerUserIds)
+    if (dashboardConfig?.config?.ownerUserIds) ownerUserIds.push(...dashboardConfig.config.ownerUserIds)
+    
+    if (ownerUserIds.includes(userId)) {
+      return true // User is listed as an owner
+    }
+    
+    // Collect admin role IDs from both sources
     const adminRoleIds: string[] = []
     if (mapleConfig?.adminRoleIds) adminRoleIds.push(...mapleConfig.adminRoleIds)
-    if (mapleConfig?.ownerRoleIds) adminRoleIds.push(...mapleConfig.ownerRoleIds)
     if (dashboardConfig?.config?.adminRoleIds) adminRoleIds.push(...dashboardConfig.config.adminRoleIds)
-    if (dashboardConfig?.config?.ownerRoleIds) adminRoleIds.push(...dashboardConfig.config.ownerRoleIds)
     
     if (adminRoleIds.length === 0) {
       // No admin roles configured - fall back to Discord MANAGE_GUILD permission
