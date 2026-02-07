@@ -242,29 +242,24 @@ export default function GuildConfigPage({ params }: GuildConfigPageProps) {
   const isDbConfigured = configData?.configured !== false
 
   // Permission checks for SyrupRx tabs
-  // Owner privilege roles: roles that can access the Setup tab (configured in the setup itself)
-  const ownerRoleIds = Array.isArray(config["ownerRoleIds"]) 
-    ? (config["ownerRoleIds"] as string[]) 
-    : []
-  // Owner privilege user IDs: specific Discord user accounts that can access Setup
+  // Owner privilege user IDs: specific Discord accounts that can access the Setup tab
   const ownerUserIds = Array.isArray(config["ownerUserIds"]) 
     ? (config["ownerUserIds"] as string[]) 
     : []
-  const userRoles = guild.memberRoles || []
-  const hasOwnerRole = ownerRoleIds.some(roleId => userRoles.includes(roleId))
   const isOwnerUser = user?.id ? ownerUserIds.includes(user.id) : false
   
-  // Setup tab: Discord server owner OR has owner privilege role OR is listed as owner user ID OR is master user
+  // Setup tab: Discord server owner OR is listed as owner user ID OR is master user
   // Regular admin roles do NOT grant setup access
-  const canAccessSetup = guild.owner || hasOwnerRole || isOwnerUser || isMasterUser
+  const canAccessSetup = guild.owner || isOwnerUser || isMasterUser
   
-  // General tab: Discord server owner OR has one of the Admin roles from setup config OR has bot admin role access OR has owner privilege role
+  // General tab: Discord server owner OR has one of the Admin roles from setup config OR has bot admin role access OR is owner user
+  const userRoles = guild.memberRoles || []
   const adminRoleIds = Array.isArray(config["adminRoleIds"]) 
     ? (config["adminRoleIds"] as string[]) 
     : []
   const hasAdminRole = adminRoleIds.some(roleId => userRoles.includes(roleId))
   // hasAdminRoleAccess is computed from the API response - user has one of the configured admin roles
-  const canAccessGeneral = guild.owner || hasAdminRole || hasAdminRoleAccess || hasOwnerRole || isOwnerUser
+  const canAccessGeneral = guild.owner || hasAdminRole || hasAdminRoleAccess || isOwnerUser
   
   // Determine default tab based on permissions
   const getDefaultTab = () => {
@@ -632,28 +627,28 @@ export default function GuildConfigPage({ params }: GuildConfigPageProps) {
                     <Crown className="mt-0.5 h-5 w-5 text-amber-500" />
                     <div className="flex-1 space-y-3">
                       <div>
-                        <Label className="text-sm font-medium text-amber-500">Owner Privilege Roles</Label>
+                        <Label className="text-sm font-medium text-amber-500">Owner Privileges</Label>
                         <p className="text-sm text-muted-foreground">
-                          These roles grant access to this Setup tab. The server owner always has access automatically. 
+                          Discord user IDs that have access to this Setup tab. The server owner always has access automatically.
                           Use this for trusted co-owners or lead administrators who need to configure the bot.
                         </p>
                       </div>
                       <Textarea
-                        placeholder="Enter role IDs separated by commas (e.g., 123456789, 987654321)"
+                        placeholder="Enter Discord user IDs separated by commas (e.g., 123456789012345678, 987654321098765432)"
                         value={
-                          Array.isArray(config["ownerRoleIds"])
-                            ? (config["ownerRoleIds"] as string[]).join(", ")
-                            : (config["ownerRoleIds"] as string) ?? ""
+                          Array.isArray(config["ownerUserIds"])
+                            ? (config["ownerUserIds"] as string[]).join(", ")
+                            : (config["ownerUserIds"] as string) ?? ""
                         }
                         onChange={(e) => {
                           const value = e.target.value
-                          const roleIds = value
+                          const userIds = value
                             .split(",")
                             .map((id) => id.trim())
                             .filter((id) => id.length > 0)
                           setConfig((prev) => ({
                             ...prev,
-                            ownerRoleIds: roleIds,
+                            ownerUserIds: userIds,
                           }))
                         }}
                         rows={2}
@@ -661,13 +656,13 @@ export default function GuildConfigPage({ params }: GuildConfigPageProps) {
                       <div className="flex items-start gap-2 rounded-md bg-amber-500/10 p-2 text-xs text-amber-500">
                         <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
                         <span>
-                          Only assign this to highly trusted roles. These roles can modify all bot settings including API keys and admin roles.
+                          Only assign this to highly trusted users. These users can modify all bot settings including API keys and admin roles.
                         </span>
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        {Array.isArray(config["ownerRoleIds"])
-                          ? `${(config["ownerRoleIds"] as string[]).length} role(s) configured`
-                          : "No roles configured"} 
+                        {Array.isArray(config["ownerUserIds"])
+                          ? `${(config["ownerUserIds"] as string[]).length} user(s) configured`
+                          : "No users configured"} 
                         {" "}&middot; Server owner always has access
                       </p>
                     </div>
@@ -757,10 +752,10 @@ export default function GuildConfigPage({ params }: GuildConfigPageProps) {
                       </Badge>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className="text-muted-foreground">Owner Roles</span>
+                      <span className="text-muted-foreground">Owner Users</span>
                       <span>
-                        {Array.isArray(config["ownerRoleIds"]) && config["ownerRoleIds"].length > 0
-                          ? `${config["ownerRoleIds"].length} role(s)`
+                        {Array.isArray(config["ownerUserIds"]) && config["ownerUserIds"].length > 0
+                          ? `${config["ownerUserIds"].length} user(s)`
                           : "None"}
                       </span>
                     </div>

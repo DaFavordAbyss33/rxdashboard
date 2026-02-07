@@ -98,28 +98,34 @@ export async function GET(
     // Build a map of guildId -> adminRoleIds (combining all sources)
     const guildAdminRoles: Record<string, string[]> = {}
     
-    // From mapleguildconfigs (adminRoleIds + ownerRoleIds at root level)
+    // Also build a map of guildId -> ownerUserIds (direct user ID access)
+    const guildOwnerUserIds: Record<string, string[]> = {}
+    
+    // From mapleguildconfigs (adminRoleIds at root level, ownerUserIds at root level)
     for (const config of mapleGuildConfigs) {
       if (!config.guildId) continue
-      const allRoles = [
-        ...(config.adminRoleIds || []),
-        ...(config.ownerRoleIds || []),
-      ]
-      if (allRoles.length > 0) {
-        guildAdminRoles[config.guildId] = allRoles
+      const adminRoles = config.adminRoleIds || []
+      if (adminRoles.length > 0) {
+        guildAdminRoles[config.guildId] = adminRoles
+      }
+      const ownerUsers = config.ownerUserIds || []
+      if (ownerUsers.length > 0) {
+        guildOwnerUserIds[config.guildId] = ownerUsers
       }
     }
     
-    // From dashboard configs (adminRoleIds + ownerRoleIds inside config object)
+    // From dashboard configs (adminRoleIds + ownerUserIds inside config object)
     for (const config of dashboardConfigs) {
       if (!config.guildId) continue
-      const allRoles = [
-        ...(config.config?.adminRoleIds || []),
-        ...(config.config?.ownerRoleIds || []),
-      ]
-      if (allRoles.length > 0) {
+      const adminRoles = config.config?.adminRoleIds || []
+      if (adminRoles.length > 0) {
         const existing = guildAdminRoles[config.guildId] || []
-        guildAdminRoles[config.guildId] = [...new Set([...existing, ...allRoles])]
+        guildAdminRoles[config.guildId] = [...new Set([...existing, ...adminRoles])]
+      }
+      const ownerUsers = config.config?.ownerUserIds || []
+      if (ownerUsers.length > 0) {
+        const existing = guildOwnerUserIds[config.guildId] || []
+        guildOwnerUserIds[config.guildId] = [...new Set([...existing, ...ownerUsers])]
       }
     }
     
@@ -131,11 +137,23 @@ export async function GET(
       if (config.adminRole) allRoles.push(config.adminRole)
       if (config.adminRoleId) allRoles.push(config.adminRoleId)
       if (Array.isArray(config.adminRoleIds)) allRoles.push(...config.adminRoleIds)
-      if (Array.isArray(config.ownerRoleIds)) allRoles.push(...config.ownerRoleIds)
       
       if (allRoles.length > 0) {
         const existing = guildAdminRoles[config.guildId] || []
         guildAdminRoles[config.guildId] = [...new Set([...existing, ...allRoles])]
+      }
+      
+      if (Array.isArray(config.ownerUserIds)) {
+        const existing = guildOwnerUserIds[config.guildId] || []
+        guildOwnerUserIds[config.guildId] = [...new Set([...existing, ...config.ownerUserIds])]
+      }
+    }
+    
+    // First check: does the user match any ownerUserIds directly (no Discord API needed)
+    const adminGuildIds: string[] = []
+    for (const [guildId, ownerUsers] of Object.entries(guildOwnerUserIds)) {
+      if (ownerUsers.includes(userId)) {
+        adminGuildIds.push(guildId)
       }
     }
 
@@ -153,10 +171,10 @@ export async function GET(
       })
     }
 
-    // For guilds that have admin roles configured, check if user has those roles
-    // Using the bot token to fetch member data (more reliable than user OAuth)
-    const adminGuildIds: string[] = []
-    const guildIdsToCheck = Object.keys(guildAdminRoles)
+    // For guilds that have admin roles configured (and not already matched by owner user ID),
+    // check if user has those roles using the bot token
+    const alreadyMatched = new Set(adminGuildIds)
+    const guildIdsToCheck = Object.keys(guildAdminRoles).filter(id => !alreadyMatched.has(id))
     
     console.log("[v0] admin-guilds: Checking", guildIdsToCheck.length, "guilds for user", userId)
     
