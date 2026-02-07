@@ -19,6 +19,8 @@ interface AuthContextType {
   isAuthenticated: boolean
   isAdmin: boolean
   isAdminLoading: boolean
+  hasBetaAccess: boolean
+  betaLoading: boolean
   login: () => void
   logout: () => void
   managableGuilds: Guild[]
@@ -79,6 +81,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [guildsLoading, setGuildsLoading] = useState(true) // Start true until session check completes
   const [isAdmin, setIsAdmin] = useState(false)
   const [isAdminLoading, setIsAdminLoading] = useState(true)
+  const [hasBetaAccess, setHasBetaAccess] = useState(false)
+  const [betaLoading, setBetaLoading] = useState(true)
 
   // Fetch guilds from Discord API (separate from session)
   const fetchGuilds = useCallback(async (forceRefresh = false) => {
@@ -135,12 +139,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(discordUser)
         setIsAdmin(data.isAdmin === true)
         
+        // Check beta access
+        try {
+          const betaResponse = await fetch("/api/auth/beta-check")
+          const betaData = await betaResponse.json()
+          setHasBetaAccess(betaData.hasBetaAccess === true)
+        } catch {
+          setHasBetaAccess(false)
+        } finally {
+          setBetaLoading(false)
+        }
+        
         // Fetch guilds separately (with caching)
         await fetchGuilds()
       } else {
         setUser(null)
         setGuilds([])
         setIsAdmin(false)
+        setHasBetaAccess(false)
+        setBetaLoading(false)
         setGuildsLoading(false) // No user, no guilds to load
         clearCachedGuilds()
       }
@@ -149,6 +166,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(null)
       setGuilds([])
       setIsAdmin(false)
+      setHasBetaAccess(false)
+      setBetaLoading(false)
       setGuildsLoading(false)
       clearCachedGuilds()
     } finally {
@@ -189,6 +208,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null)
     setGuilds([])
     setIsAdmin(false)
+    setHasBetaAccess(false)
     clearCachedGuilds()
     window.location.href = "/"
   }
@@ -216,6 +236,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isAuthenticated: !!user,
         isAdmin,
         isAdminLoading,
+        hasBetaAccess,
+        betaLoading,
         login,
         logout,
         managableGuilds,

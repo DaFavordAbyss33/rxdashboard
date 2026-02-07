@@ -17,7 +17,7 @@ function isAdminRoute(pathname: string): boolean {
 }
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isLoading, isAdmin, isAdminLoading } = useAuth()
+  const { isAuthenticated, isLoading, isAdmin, isAdminLoading, hasBetaAccess, betaLoading } = useAuth()
   const router = useRouter()
   const pathname = usePathname()
 
@@ -34,9 +34,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         router.push("/dashboard/bots")
       }
     }
-  }, [isAuthenticated, isLoading, isAdmin, isAdminLoading, pathname, router])
 
-  if (isLoading) {
+    // Check beta access - redirect to beta wall if not authorized
+    if (!isLoading && !betaLoading && isAuthenticated && !hasBetaAccess) {
+      // Allow the beta wall page itself
+      if (pathname !== "/dashboard/beta-wall") {
+        router.push("/dashboard/beta-wall")
+      }
+    }
+  }, [isAuthenticated, isLoading, isAdmin, isAdminLoading, hasBetaAccess, betaLoading, pathname, router])
+
+  if (isLoading || betaLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-4">
@@ -48,6 +56,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }
 
   if (!isAuthenticated) {
+    return null
+  }
+
+  // Show beta wall without sidebar/header for unauthorized users
+  if (!hasBetaAccess && pathname === "/dashboard/beta-wall") {
+    return <>{children}</>
+  }
+
+  // If not authorized and not on beta wall, don't render (redirect will happen)
+  if (!hasBetaAccess) {
     return null
   }
 
