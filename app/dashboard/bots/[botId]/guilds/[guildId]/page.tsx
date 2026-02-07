@@ -167,12 +167,20 @@ export default function GuildConfigPage({ params }: GuildConfigPageProps) {
   const handleSave = async () => {
     setIsSaving(true)
     try {
+      // Ensure ownerUserIds is always saved as a clean array
+      const saveConfig = { ...config }
+      if (typeof saveConfig.ownerUserIds === "string") {
+        saveConfig.ownerUserIds = (saveConfig.ownerUserIds as string)
+          .split(/[\s,]+/)
+          .map((id) => id.trim())
+          .filter((id) => id.length > 0)
+      }
       const response = await fetch(`/api/bots/${botId}/config`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           guildId,
-          config,
+          config: saveConfig,
           updatedBy: user?.username || "unknown",
         }),
       })
@@ -243,9 +251,12 @@ export default function GuildConfigPage({ params }: GuildConfigPageProps) {
 
   // Permission checks for SyrupRx tabs
   // Owner privilege user IDs: specific Discord accounts that can access the Setup tab
+  // ownerUserIds can be a string (while typing) or an array (after blur/load)
   const ownerUserIds = Array.isArray(config["ownerUserIds"]) 
     ? (config["ownerUserIds"] as string[]) 
-    : []
+    : typeof config["ownerUserIds"] === "string"
+      ? (config["ownerUserIds"] as string).split(/[\s,]+/).map(id => id.trim()).filter(id => id.length > 0)
+      : []
   const isOwnerUser = user?.id ? ownerUserIds.includes(user.id) : false
   
   // Setup tab: Discord server owner OR is listed as owner user ID OR is master user
@@ -634,16 +645,23 @@ export default function GuildConfigPage({ params }: GuildConfigPageProps) {
                         </p>
                       </div>
                       <Textarea
-                        placeholder="Enter Discord user IDs separated by commas (e.g., 123456789012345678, 987654321098765432)"
+                        placeholder="Enter Discord user IDs separated by commas or spaces (e.g., 123456789012345678, 987654321098765432)"
                         value={
                           Array.isArray(config["ownerUserIds"])
                             ? (config["ownerUserIds"] as string[]).join(", ")
                             : (config["ownerUserIds"] as string) ?? ""
                         }
                         onChange={(e) => {
-                          const value = e.target.value
-                          const userIds = value
-                            .split(",")
+                          // Store raw string while typing so spaces and commas aren't stripped
+                          setConfig((prev) => ({
+                            ...prev,
+                            ownerUserIds: e.target.value,
+                          }))
+                        }}
+                        onBlur={(e) => {
+                          // Parse into clean array when user leaves the field
+                          const userIds = e.target.value
+                            .split(/[\s,]+/)
                             .map((id) => id.trim())
                             .filter((id) => id.length > 0)
                           setConfig((prev) => ({
