@@ -98,22 +98,28 @@ export async function GET(
     // Build a map of guildId -> adminRoleIds (combining all sources)
     const guildAdminRoles: Record<string, string[]> = {}
     
-    // From mapleguildconfigs (adminRoleIds at root level)
+    // From mapleguildconfigs (adminRoleIds + ownerRoleIds at root level)
     for (const config of mapleGuildConfigs) {
       if (!config.guildId) continue
-      const adminRoles = config.adminRoleIds || []
-      if (adminRoles.length > 0) {
-        guildAdminRoles[config.guildId] = adminRoles
+      const allRoles = [
+        ...(config.adminRoleIds || []),
+        ...(config.ownerRoleIds || []),
+      ]
+      if (allRoles.length > 0) {
+        guildAdminRoles[config.guildId] = allRoles
       }
     }
     
-    // From dashboard configs (adminRoleIds inside config object)
+    // From dashboard configs (adminRoleIds + ownerRoleIds inside config object)
     for (const config of dashboardConfigs) {
       if (!config.guildId) continue
-      const adminRoles = config.config?.adminRoleIds || []
-      if (adminRoles.length > 0) {
+      const allRoles = [
+        ...(config.config?.adminRoleIds || []),
+        ...(config.config?.ownerRoleIds || []),
+      ]
+      if (allRoles.length > 0) {
         const existing = guildAdminRoles[config.guildId] || []
-        guildAdminRoles[config.guildId] = [...new Set([...existing, ...adminRoles])]
+        guildAdminRoles[config.guildId] = [...new Set([...existing, ...allRoles])]
       }
     }
     
@@ -121,14 +127,15 @@ export async function GET(
     for (const config of botGuildConfigs) {
       if (!config.guildId) continue
       
-      const adminRoles: string[] = []
-      if (config.adminRole) adminRoles.push(config.adminRole)
-      if (config.adminRoleId) adminRoles.push(config.adminRoleId)
-      if (Array.isArray(config.adminRoleIds)) adminRoles.push(...config.adminRoleIds)
+      const allRoles: string[] = []
+      if (config.adminRole) allRoles.push(config.adminRole)
+      if (config.adminRoleId) allRoles.push(config.adminRoleId)
+      if (Array.isArray(config.adminRoleIds)) allRoles.push(...config.adminRoleIds)
+      if (Array.isArray(config.ownerRoleIds)) allRoles.push(...config.ownerRoleIds)
       
-      if (adminRoles.length > 0) {
+      if (allRoles.length > 0) {
         const existing = guildAdminRoles[config.guildId] || []
-        guildAdminRoles[config.guildId] = [...new Set([...existing, ...adminRoles])]
+        guildAdminRoles[config.guildId] = [...new Set([...existing, ...allRoles])]
       }
     }
 
