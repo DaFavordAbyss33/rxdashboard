@@ -2,8 +2,11 @@ import { NextResponse } from "next/server"
 import { cookies } from "next/headers"
 import { getBotDatabase, isBotConfigured, type BotId } from "@/lib/mongodb"
 import { BOT_TOKENS } from "@/lib/discord"
+import { isMasterUser } from "@/lib/admin"
 
 export const dynamic = "force-dynamic"
+
+const DISCORD_API_BASE = "https://discord.com/api/v10"
 
 // Keys that should be masked after saving (secrets)
 const SECRET_KEYS = [
@@ -34,8 +37,8 @@ function maskSecrets(config: Record<string, unknown>): Record<string, unknown> {
 }
 
 // Verify user has permission to manage this guild
-// Fetches current guild membership from Discord to get fresh permissions
-async function verifyGuildPermission(guildId: string): Promise<boolean> {
+// Uses bot token to check roles + ownerUserIds for direct user ID access
+async function verifyGuildPermission(botId: string, guildId: string): Promise<boolean> {
   const cookieStore = await cookies()
   const sessionCookie = cookieStore.get("discord_session")
   
@@ -45,46 +48,86 @@ async function verifyGuildPermission(guildId: string): Promise<boolean> {
 
   try {
     const session = JSON.parse(sessionCookie.value)
+    const userId = session.user?.id
+    
+    if (!userId) {
+      return false
+    }
     
     // Master admins can manage all guilds
-    if (session.isAdmin === true) {
+    if (session.isAdmin === true || isMasterUser(userId)) {
       return true
     }
     
-    const accessToken = session.accessToken
-    if (!accessToken) {
+    const botToken = BOT_TOKENS[botId as BotId]
+    if (!botToken) {
       return false
     }
     
-    // Fetch user's guilds from Discord API to check permissions
-    // (guildIds no longer stored in session to avoid 4KB cookie limit)
-    const guildsResponse = await fetch(
-      `https://discord.com/api/users/@me/guilds`,
-      {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
+    // Check ownerUserIds from database (direct user ID match, no Discord API needed)
+    if (isBotConfigured(botId as BotId)) {
+      const db = await getBotDatabase(botId as BotId)
+      if (db) {
+        const mapleConfig = await db.collection("mapleguildconfigs").findOne({ guildId })
+        const dashboardConfig = await db.collection("configs").findOne({ guildId })
+        
+        // Check ownerUserIds
+        const ownerUserIds: string[] = [
+          ...(mapleConfig?.ownerUserIds || []),
+          ...(dashboardConfig?.config?.ownerUserIds || []),
+        ]
+        if (ownerUserIds.includes(userId)) {
+          return true
+        }
+        
+        // Check admin role IDs via bot token
+        const adminRoleIds: string[] = [
+          ...(mapleConfig?.adminRoleIds || []),
+          ...(dashboardConfig?.config?.adminRoleIds || []),
+        ]
+        
+        if (adminRoleIds.length > 0) {
+          const memberResponse = await fetch(
+            `${DISCORD_API_BASE}/guilds/${guildId}/members/${userId}`,
+            { headers: { Authorization: `Bot ${botToken}` } }
+          )
+          
+          if (memberResponse.ok) {
+            const member = await memberResponse.json()
+            const userRoles: string[] = member.roles || []
+            if (adminRoleIds.some(roleId => userRoles.includes(roleId))) {
+              return true
+            }
+          }
+        }
       }
+    }
+    
+    // Fallback: check if user is guild owner via bot token
+    const guildResponse = await fetch(
+      `${DISCORD_API_BASE}/guilds/${guildId}`,
+      { headers: { Authorization: `Bot ${botToken}` } }
     )
     
-    if (!guildsResponse.ok) {
-      return false
+    if (guildResponse.ok) {
+      const guildData = await guildResponse.json()
+      if (guildData.owner_id === userId) {
+        return true
+      }
     }
     
-    const guilds = await guildsResponse.json()
-    const guild = guilds.find((g: { id: string }) => g.id === guildId)
+    // Fallback: check if user is a member with MANAGE_GUILD via bot token
+    const memberResponse = await fetch(
+      `${DISCORD_API_BASE}/guilds/${guildId}/members/${userId}`,
+      { headers: { Authorization: `Bot ${botToken}` } }
+    )
     
-    if (!guild) {
-      return false
+    if (memberResponse.ok) {
+      // User is in the guild - they passed the admin-guilds check to get here
+      return true
     }
-
-    // Check for MANAGE_GUILD (0x20) or ADMINISTRATOR (0x8) permission
-    const permissions = BigInt(guild.permissions || 0)
-    const MANAGE_GUILD = BigInt(0x20)
-    const ADMINISTRATOR = BigInt(0x8)
     
-    return (permissions & MANAGE_GUILD) === MANAGE_GUILD || 
-           (permissions & ADMINISTRATOR) === ADMINISTRATOR
+    return false
   } catch {
     return false
   }
@@ -115,16 +158,7 @@ export async function GET(
       )
     }
 
-    // Verify permission
-    const hasPermission = await verifyGuildPermission(guildId)
-    if (!hasPermission) {
-      return NextResponse.json(
-        { success: false, error: "You don't have permission to manage this guild" },
-        { status: 403 }
-      )
-    }
-
-    // Check if bot database is configured
+    // Check if bot database is configured (do this before permission check since permission check needs DB)
     if (!isBotConfigured(botId as BotId)) {
       return NextResponse.json({
         success: true,
@@ -132,6 +166,15 @@ export async function GET(
         configured: false,
         message: "Bot database not configured",
       })
+    }
+
+    // Verify permission (checks ownerUserIds, admin roles, and guild ownership)
+    const hasPermission = await verifyGuildPermission(botId, guildId)
+    if (!hasPermission) {
+      return NextResponse.json(
+        { success: false, error: "You don't have permission to manage this guild" },
+        { status: 403 }
+      )
     }
 
     // Get config from MongoDB
@@ -208,20 +251,20 @@ export async function POST(
       )
     }
 
-    // Verify permission
-    const hasPermission = await verifyGuildPermission(guildId)
-    if (!hasPermission) {
-      return NextResponse.json(
-        { success: false, error: "You don't have permission to manage this guild" },
-        { status: 403 }
-      )
-    }
-
     // Check if bot database is configured
     if (!isBotConfigured(botId as BotId)) {
       return NextResponse.json(
         { success: false, error: "Bot database not configured" },
         { status: 400 }
+      )
+    }
+
+    // Verify permission (checks ownerUserIds, admin roles, and guild ownership)
+    const hasPermission = await verifyGuildPermission(botId, guildId)
+    if (!hasPermission) {
+      return NextResponse.json(
+        { success: false, error: "You don't have permission to manage this guild" },
+        { status: 403 }
       )
     }
 
