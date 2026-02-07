@@ -246,12 +246,17 @@ export default function GuildConfigPage({ params }: GuildConfigPageProps) {
   const ownerRoleIds = Array.isArray(config["ownerRoleIds"]) 
     ? (config["ownerRoleIds"] as string[]) 
     : []
+  // Owner privilege user IDs: specific Discord user accounts that can access Setup
+  const ownerUserIds = Array.isArray(config["ownerUserIds"]) 
+    ? (config["ownerUserIds"] as string[]) 
+    : []
   const userRoles = guild.memberRoles || []
   const hasOwnerRole = ownerRoleIds.some(roleId => userRoles.includes(roleId))
+  const isOwnerUser = user?.id ? ownerUserIds.includes(user.id) : false
   
-  // Setup tab: Discord server owner OR has owner privilege role OR is master user
+  // Setup tab: Discord server owner OR has owner privilege role OR is listed as owner user ID OR is master user
   // Regular admin roles do NOT grant setup access
-  const canAccessSetup = guild.owner || hasOwnerRole || isMasterUser
+  const canAccessSetup = guild.owner || hasOwnerRole || isOwnerUser || isMasterUser
   
   // General tab: Discord server owner OR has one of the Admin roles from setup config OR has bot admin role access OR has owner privilege role
   const adminRoleIds = Array.isArray(config["adminRoleIds"]) 
@@ -259,7 +264,7 @@ export default function GuildConfigPage({ params }: GuildConfigPageProps) {
     : []
   const hasAdminRole = adminRoleIds.some(roleId => userRoles.includes(roleId))
   // hasAdminRoleAccess is computed from the API response - user has one of the configured admin roles
-  const canAccessGeneral = guild.owner || hasAdminRole || hasAdminRoleAccess || hasOwnerRole
+  const canAccessGeneral = guild.owner || hasAdminRole || hasAdminRoleAccess || hasOwnerRole || isOwnerUser
   
   // Determine default tab based on permissions
   const getDefaultTab = () => {
