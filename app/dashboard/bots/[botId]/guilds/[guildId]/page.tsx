@@ -242,17 +242,24 @@ export default function GuildConfigPage({ params }: GuildConfigPageProps) {
   const isDbConfigured = configData?.configured !== false
 
   // Permission checks for SyrupRx tabs
-  // Setup tab: Discord server owner OR has "Manage Server" permission OR is master user
-  const canAccessSetup = guild.owner || hasManageGuildPermission(guild.permissions) || isMasterUser
+  // Owner privilege roles: roles that can access the Setup tab (configured in the setup itself)
+  const ownerRoleIds = Array.isArray(config["ownerRoleIds"]) 
+    ? (config["ownerRoleIds"] as string[]) 
+    : []
+  const userRoles = guild.memberRoles || []
+  const hasOwnerRole = ownerRoleIds.some(roleId => userRoles.includes(roleId))
   
-  // General tab: Discord server owner OR has one of the Admin roles from setup config OR has bot admin role access
+  // Setup tab: Discord server owner OR has owner privilege role OR is master user
+  // Regular admin roles do NOT grant setup access
+  const canAccessSetup = guild.owner || hasOwnerRole || isMasterUser
+  
+  // General tab: Discord server owner OR has one of the Admin roles from setup config OR has bot admin role access OR has owner privilege role
   const adminRoleIds = Array.isArray(config["adminRoleIds"]) 
     ? (config["adminRoleIds"] as string[]) 
     : []
-  const userRoles = guild.memberRoles || []
   const hasAdminRole = adminRoleIds.some(roleId => userRoles.includes(roleId))
   // hasAdminRoleAccess is computed from the API response - user has one of the configured admin roles
-  const canAccessGeneral = guild.owner || hasAdminRole || hasAdminRoleAccess
+  const canAccessGeneral = guild.owner || hasAdminRole || hasAdminRoleAccess || hasOwnerRole
   
   // Determine default tab based on permissions
   const getDefaultTab = () => {
@@ -386,7 +393,7 @@ export default function GuildConfigPage({ params }: GuildConfigPageProps) {
                     "rounded-none border-b-2 border-transparent px-4 py-3 data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none",
                     !canAccessSetup && "opacity-50 cursor-not-allowed"
                   )}
-                  title={!canAccessSetup ? "Requires server owner or Manage Server permission" : undefined}
+                  title={!canAccessSetup ? "Requires server owner or Owner Privilege role" : undefined}
                 >
                   <Wrench className="mr-2 h-4 w-4" />
                   Setup
@@ -614,6 +621,54 @@ export default function GuildConfigPage({ params }: GuildConfigPageProps) {
                   </div>
                 </div>
 
+                {/* Owner Privileges */}
+                <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4">
+                  <div className="flex items-start gap-3">
+                    <Crown className="mt-0.5 h-5 w-5 text-amber-500" />
+                    <div className="flex-1 space-y-3">
+                      <div>
+                        <Label className="text-sm font-medium text-amber-500">Owner Privilege Roles</Label>
+                        <p className="text-sm text-muted-foreground">
+                          These roles grant access to this Setup tab. The server owner always has access automatically. 
+                          Use this for trusted co-owners or lead administrators who need to configure the bot.
+                        </p>
+                      </div>
+                      <Textarea
+                        placeholder="Enter role IDs separated by commas (e.g., 123456789, 987654321)"
+                        value={
+                          Array.isArray(config["ownerRoleIds"])
+                            ? (config["ownerRoleIds"] as string[]).join(", ")
+                            : (config["ownerRoleIds"] as string) ?? ""
+                        }
+                        onChange={(e) => {
+                          const value = e.target.value
+                          const roleIds = value
+                            .split(",")
+                            .map((id) => id.trim())
+                            .filter((id) => id.length > 0)
+                          setConfig((prev) => ({
+                            ...prev,
+                            ownerRoleIds: roleIds,
+                          }))
+                        }}
+                        rows={2}
+                      />
+                      <div className="flex items-start gap-2 rounded-md bg-amber-500/10 p-2 text-xs text-amber-500">
+                        <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+                        <span>
+                          Only assign this to highly trusted roles. These roles can modify all bot settings including API keys and admin roles.
+                        </span>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {Array.isArray(config["ownerRoleIds"])
+                          ? `${(config["ownerRoleIds"] as string[]).length} role(s) configured`
+                          : "No roles configured"} 
+                        {" "}&middot; Server owner always has access
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
                 {/* Admin Roles */}
                 <div className="rounded-lg border border-border bg-secondary/30 p-4">
                   <div className="flex items-start gap-3">
@@ -622,7 +677,7 @@ export default function GuildConfigPage({ params }: GuildConfigPageProps) {
                       <div>
                         <Label className="text-sm font-medium">Admin Role IDs</Label>
                         <p className="text-sm text-muted-foreground">
-                          Discord role IDs that should have Maple admin permissions (comma-separated)
+                          Discord role IDs that can access the General tab and moderation commands. These roles cannot access the Setup tab.
                         </p>
                       </div>
                       <Textarea
@@ -697,6 +752,14 @@ export default function GuildConfigPage({ params }: GuildConfigPageProps) {
                       </Badge>
                     </div>
                     <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">Owner Roles</span>
+                      <span>
+                        {Array.isArray(config["ownerRoleIds"]) && config["ownerRoleIds"].length > 0
+                          ? `${config["ownerRoleIds"].length} role(s)`
+                          : "None"}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
                       <span className="text-muted-foreground">Admin Roles</span>
                       <span>
                         {Array.isArray(config["adminRoleIds"]) && config["adminRoleIds"].length > 0
@@ -718,7 +781,7 @@ export default function GuildConfigPage({ params }: GuildConfigPageProps) {
                   <Lock className="h-12 w-12 text-muted-foreground mb-4" />
                   <h3 className="text-lg font-semibold text-card-foreground">Access Restricted</h3>
                   <p className="mt-2 text-sm text-muted-foreground max-w-md">
-                    You need to be the server owner or have the Manage Server permission to access this section.
+                    You need to be the server owner or have an Owner Privilege role to access this section. Admin roles do not grant access to Setup.
                   </p>
                 </div>
               )}
