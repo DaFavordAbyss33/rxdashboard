@@ -66,12 +66,12 @@ export default function ModerationPage() {
     ...(sourceFilter !== "all" && { source: sourceFilter }),
     ...(auditSearch && { search: auditSearch }),
   })
-  const { data: auditData, isLoading: auditLoading } = useSWR(
+  const { data: auditData, isLoading: auditLoading, mutate: refreshAuditLogs } = useSWR(
     selectedGuildId && selectedBotId && activeTab === "audit"
       ? `/api/bots/${selectedBotId}/audit-logs?${auditQueryParams.toString()}`
       : null,
     fetcher,
-    { refreshInterval: 15000 }
+    { refreshInterval: 500 }
   )
 
   const isMaster = adminGuildsData?.isMaster === true
@@ -360,7 +360,7 @@ export default function ModerationPage() {
               </TabsList>
 
               <TabsContent value="server">
-                <SyrupRxGeneralTab guildId={selectedGuildId} />
+                <SyrupRxGeneralTab guildId={selectedGuildId} onActionExecuted={refreshAuditLogs} />
               </TabsContent>
 
               <TabsContent value="audit">
