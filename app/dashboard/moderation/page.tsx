@@ -71,7 +71,7 @@ export default function ModerationPage() {
       ? `/api/bots/${selectedBotId}/audit-logs?${auditQueryParams.toString()}`
       : null,
     fetcher,
-    { refreshInterval: 15000 }
+    { refreshInterval: 500 }
   )
 
   const isMaster = adminGuildsData?.isMaster === true
