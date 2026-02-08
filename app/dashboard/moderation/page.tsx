@@ -66,12 +66,16 @@ export default function ModerationPage() {
     ...(sourceFilter !== "all" && { source: sourceFilter }),
     ...(auditSearch && { search: auditSearch }),
   })
+  // Always keep audit SWR key active when a guild is selected so that
+  // refreshAuditLogs() works even when the user is on the Server tab.
+  // The refreshInterval only runs when the Audit tab is visible.
+  const auditSWRKey = selectedGuildId && selectedBotId
+    ? `/api/bots/${selectedBotId}/audit-logs?${auditQueryParams.toString()}`
+    : null
   const { data: auditData, isLoading: auditLoading, mutate: refreshAuditLogs } = useSWR(
-    selectedGuildId && selectedBotId && activeTab === "audit"
-      ? `/api/bots/${selectedBotId}/audit-logs?${auditQueryParams.toString()}`
-      : null,
+    auditSWRKey,
     fetcher,
-    { refreshInterval: 500 }
+    { refreshInterval: activeTab === "audit" ? 500 : 0 }
   )
 
   const isMaster = adminGuildsData?.isMaster === true
