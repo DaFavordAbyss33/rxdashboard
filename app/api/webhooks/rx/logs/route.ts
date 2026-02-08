@@ -112,6 +112,9 @@ export async function GET(request: Request) {
         { player: { $regex: search, $options: "i" } },
         { target: { $regex: search, $options: "i" } },
         { message: { $regex: search, $options: "i" } },
+        { command: { $regex: search, $options: "i" } },
+        { title: { $regex: search, $options: "i" } },
+        { server: { $regex: search, $options: "i" } },
       ]
     }
 
@@ -130,13 +133,19 @@ export async function GET(request: Request) {
       success: true,
       logs: logs.map(log => ({
         id: log._id.toString(),
-        type: log.type,
-        action: log.action,
-        player: log.player,
-        playerId: log.playerId,
-        target: log.target,
-        targetId: log.targetId,
-        message: log.message,
+        type: log.type || "command",
+        title: log.title || log.action || "Log",
+        action: log.action || log.command || "unknown",
+        command: log.command || null,
+        player: log.player || null,
+        playerId: log.playerId || null,
+        playerProfileUrl: log.playerProfileUrl || (log.playerId ? `https://www.roblox.com/users/${log.playerId}/profile` : null),
+        target: log.target || null,
+        targetId: log.targetId || null,
+        targetProfileUrl: log.targetProfileUrl || (log.targetId ? `https://www.roblox.com/users/${log.targetId}/profile` : null),
+        message: log.message || null,
+        server: log.server || null,
+        embedColor: log.embedColor || null,
         timestamp: log.timestamp,
       })),
       pagination: {

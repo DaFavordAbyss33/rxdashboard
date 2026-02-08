@@ -60,12 +60,18 @@ interface WebhookConfig {
 interface LogEntry {
   id: string
   type: string
+  title: string
   action: string
+  command: string | null
   player: string | null
-  playerId: string | number | null
+  playerId: string | null
+  playerProfileUrl: string | null
   target: string | null
-  targetId: string | number | null
+  targetId: string | null
+  targetProfileUrl: string | null
   message: string | null
+  server: string | null
+  embedColor: number | null
   timestamp: string
 }
 
@@ -552,40 +558,112 @@ export function WebhookTab({ guildId }: WebhookTabProps) {
                 </div>
               ) : logsData?.logs && logsData.logs.length > 0 ? (
                 <div>
-                  {/* Header */}
-                  <div className="flex items-center gap-3 border-b border-border bg-secondary/50 px-3 py-2 text-xs font-medium text-muted-foreground">
-                    <span className="w-20">Type</span>
-                    <span className="w-32">Action</span>
-                    <span className="w-28">Player</span>
-                    <span className="w-28">Target</span>
-                    <span className="flex-1">Details</span>
-                    <span className="w-36 text-right">Time</span>
-                  </div>
+                  {/* Log Entries - Card layout for Discord embed data */}
                   {logsData.logs.map((log: LogEntry) => (
                     <div
                       key={log.id}
-                      className="flex items-center gap-3 border-b border-border px-3 py-2.5 text-sm last:border-b-0 hover:bg-secondary/20"
+                      className="border-b border-border px-4 py-3 last:border-b-0 hover:bg-secondary/20"
                     >
-                      <span className="w-20">
-                        <Badge className={`text-xs ${getTypeColor(log.type)}`}>
-                          {log.type}
-                        </Badge>
-                      </span>
-                      <span className="w-32 truncate font-mono text-xs text-card-foreground">
-                        {log.action}
-                      </span>
-                      <span className="w-28 truncate text-xs text-muted-foreground">
-                        {log.player || "-"}
-                      </span>
-                      <span className="w-28 truncate text-xs text-muted-foreground">
-                        {log.target || "-"}
-                      </span>
-                      <span className="flex-1 truncate text-xs text-muted-foreground">
-                        {log.message || "-"}
-                      </span>
-                      <span className="w-36 text-right text-xs text-muted-foreground">
-                        {new Date(log.timestamp).toLocaleString()}
-                      </span>
+                      <div className="flex items-start gap-3">
+                        {/* Color bar matching embed color */}
+                        <div
+                          className="mt-0.5 h-10 w-1 shrink-0 rounded-full"
+                          style={{
+                            backgroundColor: log.embedColor
+                              ? `#${log.embedColor.toString(16).padStart(6, "0")}`
+                              : "hsl(var(--primary))",
+                          }}
+                        />
+                        <div className="flex-1 min-w-0">
+                          {/* Title & Time row */}
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-medium text-card-foreground">
+                                {log.title}
+                              </span>
+                              <Badge className={`text-[10px] ${getTypeColor(log.type)}`}>
+                                {log.type}
+                              </Badge>
+                            </div>
+                            <span className="shrink-0 text-xs text-muted-foreground">
+                              {new Date(log.timestamp).toLocaleString()}
+                            </span>
+                          </div>
+                          {/* Player & Command info */}
+                          <div className="mt-1 text-xs text-muted-foreground">
+                            {log.player && (
+                              <span>
+                                {log.playerProfileUrl ? (
+                                  <a
+                                    href={log.playerProfileUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-0.5 text-primary font-medium hover:underline"
+                                  >
+                                    {log.player}
+                                    {log.playerId && <span className="text-muted-foreground">:{log.playerId}</span>}
+                                    <ExternalLink className="ml-0.5 h-3 w-3" />
+                                  </a>
+                                ) : (
+                                  <>
+                                    <span className="text-primary font-medium">{log.player}</span>
+                                    {log.playerId && <span className="text-muted-foreground">:{log.playerId}</span>}
+                                  </>
+                                )}
+                                {log.command && (
+                                  <span>
+                                    {" ran "}
+                                    <code className="rounded bg-secondary px-1 py-0.5 font-mono text-card-foreground">
+                                      {log.command}
+                                    </code>
+                                  </span>
+                                )}
+                              </span>
+                            )}
+                            {!log.player && log.command && (
+                              <span>
+                                {"Command: "}
+                                <code className="rounded bg-secondary px-1 py-0.5 font-mono text-card-foreground">
+                                  {log.command}
+                                </code>
+                              </span>
+                            )}
+                          </div>
+                          {/* Message/Details */}
+                          {log.message && (
+                            <p className="mt-1 text-xs text-muted-foreground line-clamp-2">
+                              {log.message}
+                            </p>
+                          )}
+                          {/* Footer: target, server */}
+                          {(log.target || log.server) && (
+                            <div className="mt-1.5 flex items-center gap-3 text-[11px] text-muted-foreground">
+                              {log.target && (
+                                <span>
+                                  {"Target: "}
+                                  {log.targetProfileUrl ? (
+                                    <a
+                                      href={log.targetProfileUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="inline-flex items-center gap-0.5 text-card-foreground hover:text-primary hover:underline"
+                                    >
+                                      {log.target}
+                                      {log.targetId && <>:{log.targetId}</>}
+                                      <ExternalLink className="ml-0.5 h-2.5 w-2.5" />
+                                    </a>
+                                  ) : (
+                                    <span className="text-card-foreground">{log.target}</span>
+                                  )}
+                                </span>
+                              )}
+                              {log.server && (
+                                <span>Server: <span className="text-card-foreground">{log.server}</span></span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     </div>
                   ))}
                 </div>
