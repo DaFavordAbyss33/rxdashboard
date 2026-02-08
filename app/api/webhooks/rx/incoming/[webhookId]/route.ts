@@ -5,6 +5,19 @@ export const dynamic = "force-dynamic"
 
 const MAX_WEBHOOK_LOGS = 10000
 
+// CORS headers for external requests (Maple game server, Roblox, etc.)
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With",
+  "Access-Control-Max-Age": "86400",
+}
+
+// Handle CORS preflight
+export async function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: CORS_HEADERS })
+}
+
 // POST /api/webhooks/rx/incoming/[webhookId] - Receive log data from Maple game
 export async function POST(
   request: Request,
@@ -12,56 +25,89 @@ export async function POST(
 ) {
   try {
     const { webhookId } = await params
+    console.log("[v0] Incoming webhook hit, webhookId:", webhookId)
 
     if (!webhookId || webhookId.length < 10) {
+      console.log("[v0] Invalid webhook ID, too short or missing")
       return NextResponse.json(
         { success: false, error: "Invalid webhook ID" },
-        { status: 400 }
+        { status: 400, headers: CORS_HEADERS }
       )
     }
 
     const botId = "syruprx" as BotId
     if (!isBotConfigured(botId)) {
+      console.log("[v0] Bot not configured:", botId)
       return NextResponse.json(
         { success: false, error: "Service unavailable" },
-        { status: 503 }
+        { status: 503, headers: CORS_HEADERS }
       )
     }
 
     const db = await getBotDatabase(botId)
     if (!db) {
+      console.log("[v0] Failed to get database for:", botId)
       return NextResponse.json(
         { success: false, error: "Service unavailable" },
-        { status: 503 }
+        { status: 503, headers: CORS_HEADERS }
       )
     }
 
     // Look up webhook by ID
     const webhook = await db.collection("webhooks").findOne({ webhookId })
     if (!webhook) {
+      console.log("[v0] Webhook not found in database for ID:", webhookId)
       return NextResponse.json(
         { success: false, error: "Webhook not found" },
-        { status: 404 }
+        { status: 404, headers: CORS_HEADERS }
       )
     }
+
+    console.log("[v0] Webhook found, guild:", webhook.guildId, "enabled:", webhook.enabled)
 
     if (webhook.enabled === false) {
       return NextResponse.json(
         { success: false, error: "Webhook is disabled" },
-        { status: 403 }
+        { status: 403, headers: CORS_HEADERS }
       )
     }
 
-    // Parse incoming data from Maple game
+    // Parse incoming data - support both JSON and form/text formats
     let body: Record<string, unknown>
+    const contentType = request.headers.get("content-type") || ""
+    console.log("[v0] Content-Type:", contentType)
+
     try {
-      body = await request.json()
-    } catch {
+      if (contentType.includes("application/json")) {
+        body = await request.json()
+      } else if (contentType.includes("application/x-www-form-urlencoded")) {
+        const formData = await request.formData()
+        body = Object.fromEntries(formData.entries())
+      } else if (contentType.includes("text/plain")) {
+        const text = await request.text()
+        try {
+          body = JSON.parse(text)
+        } catch {
+          body = { message: text, type: "raw" }
+        }
+      } else {
+        // Try JSON first, fallback to text
+        const rawText = await request.text()
+        try {
+          body = JSON.parse(rawText)
+        } catch {
+          body = { message: rawText, type: "raw" }
+        }
+      }
+    } catch (parseError) {
+      console.log("[v0] Failed to parse request body:", parseError)
       return NextResponse.json(
-        { success: false, error: "Invalid JSON body" },
-        { status: 400 }
+        { success: false, error: "Failed to parse request body" },
+        { status: 400, headers: CORS_HEADERS }
       )
     }
+
+    console.log("[v0] Parsed body:", JSON.stringify(body).substring(0, 500))
 
     // Build log entry
     const logEntry = {
@@ -133,15 +179,17 @@ export async function POST(
       }
     }
 
-    return NextResponse.json({
-      success: true,
-      message: "Log received",
-    })
+    console.log("[v0] Log stored successfully for guild:", webhook.guildId)
+
+    return NextResponse.json(
+      { success: true, message: "Log received" },
+      { headers: CORS_HEADERS }
+    )
   } catch (error) {
-    console.error("[webhook] Failed to process incoming webhook:", error)
+    console.error("[v0] Failed to process incoming webhook:", error)
     return NextResponse.json(
       { success: false, error: "Internal server error" },
-      { status: 500 }
+      { status: 500, headers: CORS_HEADERS }
     )
   }
 }
