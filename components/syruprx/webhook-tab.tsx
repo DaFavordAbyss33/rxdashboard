@@ -22,20 +22,17 @@ import {
 } from "@/components/ui/alert-dialog"
 import {
   Webhook,
-  Copy,
-  Check,
   RefreshCw,
   Trash2,
   ExternalLink,
-  AlertTriangle,
   Loader2,
   Search,
   ChevronLeft,
   ChevronRight,
-  Eye,
-  EyeOff,
-  Link2,
+  Hash,
   ScrollText,
+  ArrowDownToLine,
+  Info,
 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -48,12 +45,10 @@ interface WebhookTabProps {
 interface WebhookConfig {
   id: string
   guildId: string
-  rxWebhookUrl: string
-  discordWebhookUrl: string | null
-  hasDiscordWebhook: boolean
+  channelId: string
   enabled: boolean
   createdAt: string
-  lastUsedAt: string | null
+  lastSyncedAt: string | null
   totalLogs: number
 }
 
@@ -76,12 +71,10 @@ interface LogEntry {
 }
 
 export function WebhookTab({ guildId }: WebhookTabProps) {
-  const [discordWebhookUrl, setDiscordWebhookUrl] = useState("")
-  const [isGenerating, setIsGenerating] = useState(false)
-  const [isUpdating, setIsUpdating] = useState(false)
+  const [channelId, setChannelId] = useState("")
+  const [isSaving, setIsSaving] = useState(false)
+  const [isSyncing, setIsSyncing] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
-  const [copiedUrl, setCopiedUrl] = useState(false)
-  const [showRxUrl, setShowRxUrl] = useState(false)
   const [logSearch, setLogSearch] = useState("")
   const [logPage, setLogPage] = useState(1)
   const [logType, setLogType] = useState("")
@@ -103,60 +96,58 @@ export function WebhookTab({ guildId }: WebhookTabProps) {
       ? `/api/webhooks/rx/logs?guildId=${guildId}&page=${logPage}&limit=25${logType ? `&type=${logType}` : ""}${logSearch ? `&search=${encodeURIComponent(logSearch)}` : ""}`
       : null,
     fetcher,
-    { refreshInterval: 15000 }
+    { refreshInterval: 30000 }
   )
 
   const webhook: WebhookConfig | null = webhookData?.webhook || null
 
-  const handleGenerate = async () => {
-    setIsGenerating(true)
+  const handleSaveChannel = async () => {
+    if (!channelId) {
+      toast.error("Please enter a Discord channel ID")
+      return
+    }
+    setIsSaving(true)
     try {
       const response = await fetch("/api/webhooks/rx", {
-        method: "POST",
+        method: webhook ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          guildId,
-          discordWebhookUrl: discordWebhookUrl || undefined,
-        }),
+        body: JSON.stringify({ guildId, channelId }),
       })
       const data = await response.json()
       if (data.success) {
-        toast.success(data.message || "Webhook generated successfully!")
+        toast.success(data.message || "Channel saved!")
         refreshWebhook()
-        setShowRxUrl(true) // Show the URL immediately after generation
+        setChannelId("")
       } else {
-        toast.error(data.error || "Failed to generate webhook")
+        toast.error(data.error || "Failed to save channel")
       }
     } catch {
       toast.error("Network error. Please try again.")
     } finally {
-      setIsGenerating(false)
+      setIsSaving(false)
     }
   }
 
-  const handleUpdateDiscordUrl = async () => {
-    if (!webhook) return
-    setIsUpdating(true)
+  const handleSync = async () => {
+    setIsSyncing(true)
     try {
-      const response = await fetch("/api/webhooks/rx", {
-        method: "PUT",
+      const response = await fetch("/api/webhooks/rx/sync", {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          guildId,
-          discordWebhookUrl: discordWebhookUrl || "",
-        }),
+        body: JSON.stringify({ guildId }),
       })
       const data = await response.json()
       if (data.success) {
-        toast.success("Discord webhook URL updated!")
+        toast.success(data.message || `Synced ${data.synced} logs`)
         refreshWebhook()
+        refreshLogs()
       } else {
-        toast.error(data.error || "Failed to update Discord webhook URL")
+        toast.error(data.error || "Failed to sync logs")
       }
     } catch {
       toast.error("Network error. Please try again.")
     } finally {
-      setIsUpdating(false)
+      setIsSyncing(false)
     }
   }
 
@@ -170,10 +161,10 @@ export function WebhookTab({ guildId }: WebhookTabProps) {
       })
       const data = await response.json()
       if (data.success) {
-        toast.success(enabled ? "Webhook enabled" : "Webhook disabled")
+        toast.success(enabled ? "Sync enabled" : "Sync disabled")
         refreshWebhook()
       } else {
-        toast.error(data.error || "Failed to update webhook")
+        toast.error(data.error || "Failed to update")
       }
     } catch {
       toast.error("Network error")
@@ -188,11 +179,11 @@ export function WebhookTab({ guildId }: WebhookTabProps) {
       })
       const data = await response.json()
       if (data.success) {
-        toast.success("Webhook deleted successfully")
+        toast.success("Webhook configuration deleted")
         refreshWebhook()
-        setDiscordWebhookUrl("")
+        setChannelId("")
       } else {
-        toast.error(data.error || "Failed to delete webhook")
+        toast.error(data.error || "Failed to delete")
       }
     } catch {
       toast.error("Network error")
@@ -201,38 +192,7 @@ export function WebhookTab({ guildId }: WebhookTabProps) {
     }
   }
 
-  const handleRegenerate = async () => {
-    setIsGenerating(true)
-    try {
-      const response = await fetch("/api/webhooks/rx", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ guildId }),
-      })
-      const data = await response.json()
-      if (data.success) {
-        toast.success("Webhook URL regenerated! Update the URL in your Maple server.")
-        refreshWebhook()
-        setShowRxUrl(true)
-      } else {
-        toast.error(data.error || "Failed to regenerate webhook")
-      }
-    } catch {
-      toast.error("Network error")
-    } finally {
-      setIsGenerating(false)
-    }
-  }
-
-  const copyToClipboard = useCallback((text: string) => {
-    navigator.clipboard.writeText(text).then(() => {
-      setCopiedUrl(true)
-      toast.success("Copied to clipboard!")
-      setTimeout(() => setCopiedUrl(false), 2000)
-    })
-  }, [])
-
-  const getTypeColor = (type: string) => {
+  const getTypeColor = useCallback((type: string) => {
     switch (type.toLowerCase()) {
       case "command": return "bg-primary/20 text-primary"
       case "moderation": return "bg-destructive/20 text-destructive"
@@ -242,7 +202,7 @@ export function WebhookTab({ guildId }: WebhookTabProps) {
       case "leave": return "bg-muted text-muted-foreground"
       default: return "bg-secondary text-secondary-foreground"
     }
-  }
+  }, [])
 
   if (webhookLoading) {
     return (
@@ -258,78 +218,81 @@ export function WebhookTab({ guildId }: WebhookTabProps) {
     <div className="space-y-6">
       <div>
         <h3 className="text-lg font-semibold text-card-foreground">
-          Webhook Configuration
+          Command Log Sync
         </h3>
         <p className="mt-1 text-sm text-muted-foreground">
-          Generate an RX Webhook URL for your Maple Hospital server to send command logs to the dashboard.
-          Optionally link a Discord webhook to also push logs to a Discord channel.
+          Connect a Discord channel where Maple Hospital posts command logs.
+          The bot will read messages from that channel and display them here.
         </p>
       </div>
       <Separator />
 
-      {/* Webhook Not Created Yet */}
+      {/* Channel Not Set Yet */}
       {!webhook && (
         <div className="space-y-6">
-          {/* Discord Webhook URL (optional) */}
+          {/* How it works */}
           <div className="rounded-lg border border-border bg-secondary/30 p-4">
             <div className="flex items-start gap-3">
-              <Link2 className="mt-0.5 h-5 w-5 text-muted-foreground" />
-              <div className="flex-1 space-y-3">
-                <div>
-                  <Label className="text-sm font-medium">Discord Webhook URL</Label>
-                  <p className="text-sm text-muted-foreground">
-                    Optional. Logs will also be pushed to this Discord channel webhook.
-                  </p>
-                </div>
-                <Input
-                  placeholder="https://discord.com/api/webhooks/..."
-                  value={discordWebhookUrl}
-                  onChange={(e) => setDiscordWebhookUrl(e.target.value)}
-                />
+              <Info className="mt-0.5 h-5 w-5 text-muted-foreground" />
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-card-foreground">How it works</p>
+                <ol className="space-y-1.5 text-sm text-muted-foreground list-decimal list-inside">
+                  <li>Create a Discord webhook in a channel in your server</li>
+                  <li>Add that Discord webhook URL to your Maple Hospital game settings</li>
+                  <li>Enter the <strong className="text-card-foreground">channel ID</strong> of that same channel below</li>
+                  <li>The SyrupRx bot will read command logs from the channel and display them here</li>
+                </ol>
                 <p className="text-xs text-muted-foreground">
-                  You can add or change this later.
+                  Make sure the SyrupRx bot has <strong className="text-card-foreground">Read Message History</strong> permission in the channel.
                 </p>
               </div>
             </div>
           </div>
 
-          {/* Generate Button */}
+          {/* Channel ID Input */}
           <div className="rounded-lg border border-primary/30 bg-primary/5 p-6">
             <div className="flex flex-col items-center gap-4 text-center">
               <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-primary/20">
-                <Webhook className="h-7 w-7 text-primary" />
+                <Hash className="h-7 w-7 text-primary" />
               </div>
               <div>
                 <h4 className="font-semibold text-card-foreground">
-                  Generate RX Webhook URL
+                  Connect Log Channel
                 </h4>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Create a unique webhook URL to put into your Maple Hospital server for command logging.
+                  Enter the Discord channel ID where the Maple webhook posts command logs.
                 </p>
               </div>
-              <Button
-                onClick={handleGenerate}
-                disabled={isGenerating}
-                size="lg"
-              >
-                {isGenerating ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Generating...
-                  </>
-                ) : (
-                  <>
-                    <Webhook className="mr-2 h-4 w-4" />
-                    Generate Webhook URL
-                  </>
-                )}
-              </Button>
+              <div className="flex w-full max-w-md gap-2">
+                <Input
+                  placeholder="e.g. 1234567890123456789"
+                  value={channelId}
+                  onChange={(e) => setChannelId(e.target.value.replace(/\D/g, ""))}
+                  className="font-mono"
+                />
+                <Button
+                  onClick={handleSaveChannel}
+                  disabled={isSaving || !channelId}
+                >
+                  {isSaving ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Connecting...
+                    </>
+                  ) : (
+                    "Connect"
+                  )}
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Right-click the channel in Discord and select "Copy Channel ID" (requires Developer Mode).
+              </p>
             </div>
           </div>
         </div>
       )}
 
-      {/* Webhook Exists */}
+      {/* Channel Connected */}
       {webhook && (
         <div className="space-y-6">
           {/* Status & Controls */}
@@ -338,12 +301,12 @@ export function WebhookTab({ guildId }: WebhookTabProps) {
               <div className={`h-3 w-3 rounded-full ${webhook.enabled ? "bg-online" : "bg-offline"}`} />
               <div>
                 <span className="text-sm font-medium text-card-foreground">
-                  Webhook {webhook.enabled ? "Active" : "Disabled"}
+                  Sync {webhook.enabled ? "Active" : "Disabled"}
                 </span>
                 <p className="text-xs text-muted-foreground">
-                  {webhook.totalLogs} log{webhook.totalLogs !== 1 ? "s" : ""} received
-                  {webhook.lastUsedAt && (
-                    <> &middot; Last used {new Date(webhook.lastUsedAt).toLocaleString()}</>
+                  {webhook.totalLogs} log{webhook.totalLogs !== 1 ? "s" : ""} synced
+                  {webhook.lastSyncedAt && (
+                    <> &middot; Last synced {new Date(webhook.lastSyncedAt).toLocaleString()}</>
                   )}
                 </p>
               </div>
@@ -354,147 +317,102 @@ export function WebhookTab({ guildId }: WebhookTabProps) {
             />
           </div>
 
-          {/* RX Webhook URL */}
+          {/* Connected Channel */}
           <div className="rounded-lg border border-primary/30 bg-primary/5 p-4">
             <div className="flex items-start gap-3">
-              <Webhook className="mt-0.5 h-5 w-5 text-primary" />
+              <Hash className="mt-0.5 h-5 w-5 text-primary" />
               <div className="flex-1 space-y-3">
                 <div>
-                  <Label className="text-sm font-medium text-primary">RX Webhook URL</Label>
+                  <Label className="text-sm font-medium text-primary">Log Channel</Label>
                   <p className="text-sm text-muted-foreground">
-                    Put this URL into your Maple Hospital server for command logs.
+                    Reading command logs from this Discord channel.
                   </p>
                 </div>
-                <div className="flex gap-2">
-                  <div className="relative flex-1">
-                    <Input
-                      readOnly
-                      value={showRxUrl ? webhook.rxWebhookUrl : "••••••••••••••••••••••••••••••••"}
-                      className="pr-10 font-mono text-xs"
-                    />
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    onClick={() => setShowRxUrl(!showRxUrl)}
-                    title={showRxUrl ? "Hide URL" : "Show URL"}
-                  >
-                    {showRxUrl ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    onClick={() => copyToClipboard(webhook.rxWebhookUrl)}
-                    title="Copy URL"
-                  >
-                    {copiedUrl ? <Check className="h-4 w-4 text-online" /> : <Copy className="h-4 w-4" />}
-                  </Button>
+                <div className="flex items-center gap-2">
+                  <code className="rounded-md bg-secondary px-3 py-1.5 font-mono text-sm text-card-foreground">
+                    {webhook.channelId}
+                  </code>
                 </div>
-                <div className="flex items-start gap-2 rounded-md bg-amber-500/10 p-2 text-xs text-amber-500">
-                  <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
-                  <span>
-                    Keep this URL secret. Anyone with this URL can send logs to your dashboard.
-                  </span>
+                {/* Change channel */}
+                <div className="flex gap-2 pt-1">
+                  <Input
+                    placeholder="Enter new channel ID to update..."
+                    value={channelId}
+                    onChange={(e) => setChannelId(e.target.value.replace(/\D/g, ""))}
+                    className="flex-1 font-mono text-xs"
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleSaveChannel}
+                    disabled={isSaving || !channelId}
+                  >
+                    {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                    Update
+                  </Button>
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Discord Webhook URL */}
-          <div className="rounded-lg border border-border bg-secondary/30 p-4">
-            <div className="flex items-start gap-3">
-              <Link2 className="mt-0.5 h-5 w-5 text-muted-foreground" />
-              <div className="flex-1 space-y-3">
-                <div>
-                  <Label className="text-sm font-medium">Discord Webhook URL</Label>
-                  <p className="text-sm text-muted-foreground">
-                    Optional. Logs will also be pushed to this Discord channel.
-                  </p>
-                </div>
-                <div className="flex gap-2">
-                  <Input
-                    placeholder={webhook.hasDiscordWebhook ? "Enter new URL to update..." : "https://discord.com/api/webhooks/..."}
-                    value={discordWebhookUrl}
-                    onChange={(e) => setDiscordWebhookUrl(e.target.value)}
-                    className="flex-1"
-                  />
-                  <Button
-                    variant="outline"
-                    onClick={handleUpdateDiscordUrl}
-                    disabled={isUpdating || !discordWebhookUrl}
-                  >
-                    {isUpdating ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : null}
-                    {webhook.hasDiscordWebhook ? "Update" : "Save"}
-                  </Button>
-                </div>
+          {/* Sync Button */}
+          <div className="flex items-center justify-between rounded-lg border border-border bg-secondary/30 p-4">
+            <div className="flex items-center gap-3">
+              <ArrowDownToLine className="h-5 w-5 text-muted-foreground" />
+              <div>
+                <p className="text-sm font-medium text-card-foreground">Pull Latest Logs</p>
                 <p className="text-xs text-muted-foreground">
-                  Status:{" "}
-                  <Badge variant={webhook.hasDiscordWebhook ? "default" : "secondary"} className="text-xs">
-                    {webhook.hasDiscordWebhook ? "Connected" : "Not Set"}
-                  </Badge>
+                  Fetch new messages from the Discord channel and parse command logs.
                 </p>
               </div>
             </div>
+            <Button
+              onClick={handleSync}
+              disabled={isSyncing || !webhook.enabled}
+            >
+              {isSyncing ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Syncing...
+                </>
+              ) : (
+                <>
+                  <ArrowDownToLine className="mr-2 h-4 w-4" />
+                  Sync Now
+                </>
+              )}
+            </Button>
           </div>
 
           {/* Danger Zone */}
           <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4">
             <h4 className="mb-3 text-sm font-medium text-destructive">Danger Zone</h4>
-            <div className="flex flex-wrap gap-3">
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button variant="outline" size="sm" className="border-amber-500/50 text-amber-500 hover:bg-amber-500/10 hover:text-amber-500">
-                    <RefreshCw className="mr-2 h-4 w-4" />
-                    Regenerate URL
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Regenerate Webhook URL?</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      This will create a new webhook URL and invalidate the old one.
-                      You will need to update the URL in your Maple Hospital server.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction onClick={handleRegenerate} disabled={isGenerating}>
-                      {isGenerating ? "Regenerating..." : "Regenerate"}
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button variant="outline" size="sm" className="border-destructive/50 text-destructive hover:bg-destructive/10 hover:text-destructive">
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    Delete Webhook
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Delete Webhook?</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      This will permanently delete the webhook and its URL.
-                      Existing logs will be preserved but no new logs will be received.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction
-                      onClick={handleDelete}
-                      disabled={isDeleting}
-                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                    >
-                      {isDeleting ? "Deleting..." : "Delete"}
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-            </div>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="outline" size="sm" className="border-destructive/50 text-destructive hover:bg-destructive/10 hover:text-destructive">
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Remove Channel Connection
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Remove Channel Connection?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will disconnect the log channel. Existing logs will be preserved but no new logs will be synced.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={handleDelete}
+                    disabled={isDeleting}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  >
+                    {isDeleting ? "Removing..." : "Remove"}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </div>
 
           <Separator />
@@ -558,7 +476,6 @@ export function WebhookTab({ guildId }: WebhookTabProps) {
                 </div>
               ) : logsData?.logs && logsData.logs.length > 0 ? (
                 <div>
-                  {/* Log Entries - Card layout for Discord embed data */}
                   {logsData.logs.map((log: LogEntry) => (
                     <div
                       key={log.id}
@@ -671,10 +588,10 @@ export function WebhookTab({ guildId }: WebhookTabProps) {
                 <div className="flex flex-col items-center justify-center gap-2 py-12 text-center">
                   <ScrollText className="h-8 w-8 text-muted-foreground" />
                   <p className="text-sm text-muted-foreground">
-                    {logSearch || logType ? "No logs match your filters" : "No logs received yet"}
+                    {logSearch || logType ? "No logs match your filters" : "No logs synced yet"}
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    {!logSearch && !logType && "Logs will appear here when your Maple server sends data to the webhook URL."}
+                    {!logSearch && !logType && "Click \"Sync Now\" above to pull command logs from Discord."}
                   </p>
                 </div>
               )}
