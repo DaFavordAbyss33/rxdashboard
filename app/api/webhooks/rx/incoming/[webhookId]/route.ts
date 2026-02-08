@@ -36,18 +36,23 @@ interface ParsedLog {
   title: string
   player: string | null
   playerId: string | null
+  playerProfileUrl: string | null
   command: string | null
   message: string | null
   server: string | null
   target: string | null
+  targetId: string | null
+  targetProfileUrl: string | null
 }
 
 /**
  * Parse a Discord embed into structured log fields.
  * The Maple game sends embeds like:
  *   title: "Command Executed"
- *   description: "MistyReligions:82197574 ran the command: :a |REMINDER| Please do not crowd..."
+ *   description: "[MistyReligions:82197574](https://www.roblox.com/users/82197574/profile) ran the command: :a |REMINDER| Please do not crowd..."
  *   footer.text: "Custom Server: a8d-961"
+ *
+ * The player name is a Discord markdown hyperlink to their Roblox profile.
  */
 function parseDiscordEmbed(embed: DiscordEmbed): ParsedLog {
   const title = embed.title || "Unknown"
@@ -69,20 +74,34 @@ function parseDiscordEmbed(embed: DiscordEmbed): ParsedLog {
     type = "system"
   }
 
-  // Parse description to extract player and command info
-  // Format: "PlayerName:PlayerId ran the command: :commandhere args..."
   let player: string | null = null
   let playerId: string | null = null
+  let playerProfileUrl: string | null = null
   let command: string | null = null
   let message: string | null = description || null
 
-  // Try to match "Username:UserId ran the command: ..." pattern
-  const cmdMatch = description.match(/^(.+?):(\d+)\s+ran the command:\s*(.+)/s)
-  if (cmdMatch) {
-    player = cmdMatch[1].trim()
-    playerId = cmdMatch[2].trim()
-    const fullCommand = cmdMatch[3].trim()
-    // Split command from arguments — command starts with :
+  // Pattern 1: Discord hyperlinked player — [Username:UserId](https://www.roblox.com/users/UserId/profile) ran the command: ...
+  const linkedCmdMatch = description.match(
+    /^\[([^\]]+?):(\d+)\]\((https?:\/\/[^\)]+)\)\s+ran the command:\s*(.+)/s
+  )
+  // Pattern 2: Plain text player — Username:UserId ran the command: ...
+  const plainCmdMatch = description.match(
+    /^([^\[\]]+?):(\d+)\s+ran the command:\s*(.+)/s
+  )
+  // Pattern 3: Hyperlinked player doing something generic (not "ran the command")
+  const linkedGenericMatch = description.match(
+    /^\[([^\]]+?):(\d+)\]\((https?:\/\/[^\)]+)\)\s+(.+)/s
+  )
+  // Pattern 4: Plain text generic
+  const plainGenericMatch = description.match(
+    /^([^\[\]]+?):(\d+)\s+(.+)/s
+  )
+
+  if (linkedCmdMatch) {
+    player = linkedCmdMatch[1].trim()
+    playerId = linkedCmdMatch[2].trim()
+    playerProfileUrl = linkedCmdMatch[3].trim()
+    const fullCommand = linkedCmdMatch[4].trim()
     const cmdParts = fullCommand.match(/^(:\S+)\s*(.*)/s)
     if (cmdParts) {
       command = cmdParts[1]
@@ -91,14 +110,29 @@ function parseDiscordEmbed(embed: DiscordEmbed): ParsedLog {
       command = fullCommand
       message = null
     }
-  } else {
-    // Try generic "Username:UserId did something" pattern
-    const genericMatch = description.match(/^(.+?):(\d+)\s+(.+)/s)
-    if (genericMatch) {
-      player = genericMatch[1].trim()
-      playerId = genericMatch[2].trim()
-      message = genericMatch[3].trim()
+  } else if (plainCmdMatch) {
+    player = plainCmdMatch[1].trim()
+    playerId = plainCmdMatch[2].trim()
+    playerProfileUrl = `https://www.roblox.com/users/${playerId}/profile`
+    const fullCommand = plainCmdMatch[3].trim()
+    const cmdParts = fullCommand.match(/^(:\S+)\s*(.*)/s)
+    if (cmdParts) {
+      command = cmdParts[1]
+      message = cmdParts[2] || null
+    } else {
+      command = fullCommand
+      message = null
     }
+  } else if (linkedGenericMatch) {
+    player = linkedGenericMatch[1].trim()
+    playerId = linkedGenericMatch[2].trim()
+    playerProfileUrl = linkedGenericMatch[3].trim()
+    message = linkedGenericMatch[4].trim()
+  } else if (plainGenericMatch) {
+    player = plainGenericMatch[1].trim()
+    playerId = plainGenericMatch[2].trim()
+    playerProfileUrl = `https://www.roblox.com/users/${playerId}/profile`
+    message = plainGenericMatch[3].trim()
   }
 
   // Parse footer for server info — "Custom Server: a8d-961"
@@ -112,14 +146,31 @@ function parseDiscordEmbed(embed: DiscordEmbed): ParsedLog {
     }
   }
 
-  // Check embed fields for extra data (some embeds use structured fields)
+  // Check embed fields for extra structured data
   let target: string | null = null
+  let targetId: string | null = null
+  let targetProfileUrl: string | null = null
   if (embed.fields) {
     for (const field of embed.fields) {
       const name = field.name.toLowerCase()
-      if (name.includes("target") || name.includes("player") && !player) {
-        if (name.includes("target")) target = field.value
-        else player = field.value
+      if (name.includes("target")) {
+        // Target could also be hyperlinked: [Name:Id](url)
+        const targetLinked = field.value.match(/^\[([^\]]+?):(\d+)\]\((https?:\/\/[^\)]+)\)/)
+        const targetPlain = field.value.match(/^(.+?):(\d+)/)
+        if (targetLinked) {
+          target = targetLinked[1].trim()
+          targetId = targetLinked[2].trim()
+          targetProfileUrl = targetLinked[3].trim()
+        } else if (targetPlain) {
+          target = targetPlain[1].trim()
+          targetId = targetPlain[2].trim()
+          targetProfileUrl = `https://www.roblox.com/users/${targetId}/profile`
+        } else {
+          target = field.value
+        }
+      }
+      if (!player && name.includes("player")) {
+        player = field.value
       }
       if (name.includes("reason") || name.includes("detail")) {
         message = field.value
@@ -130,7 +181,7 @@ function parseDiscordEmbed(embed: DiscordEmbed): ParsedLog {
     }
   }
 
-  return { type, title, player, playerId, command, message, server, target }
+  return { type, title, player, playerId, playerProfileUrl, command, message, server, target, targetId, targetProfileUrl }
 }
 
 // POST /api/webhooks/rx/incoming/[webhookId] - Receive log data from Maple game
@@ -218,7 +269,10 @@ export async function POST(
           action: parsed.command || parsed.title,
           player: parsed.player,
           playerId: parsed.playerId,
+          playerProfileUrl: parsed.playerProfileUrl,
           target: parsed.target,
+          targetId: parsed.targetId,
+          targetProfileUrl: parsed.targetProfileUrl,
           command: parsed.command,
           message: parsed.message,
           server: parsed.server,
