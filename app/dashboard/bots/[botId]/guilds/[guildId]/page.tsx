@@ -152,37 +152,7 @@ export default function GuildConfigPage({ params }: GuildConfigPageProps) {
   const adminGuildsLoading = user && !adminGuildsData
   const botGuildsLoading = !botGuildsData
   
-  console.log("[v0] GuildConfigPage state:", {
-    isDataLoading,
-    adminGuildsLoading,
-    botGuildsLoading,
-    botsLoading,
-    configLoading,
-    authLoading,
-    guildsLoading,
-    hasBot: !!bot,
-    hasGuild: !!guild,
-    botId,
-    guildId,
-    botsData: botsData ? "loaded" : "null",
-    botGuildsData: botGuildsData ? "loaded" : "null",
-    adminGuildsData: adminGuildsData ? "loaded" : "null",
-    configData: configData ? "loaded" : "null",
-    user: user ? user.id : "null",
-    canAccessGeneral,
-    canAccessSetup,
-    defaultTab: (() => {
-      if (botId === "syruprx") {
-        if (guild?.owner || adminRoleIds.some((roleId: string) => (guild?.memberRoles || []).includes(roleId)) || adminRoleGuildIds.has(guildId) || isMasterUser || (user?.id ? ownerUserIds.includes(user.id) : false)) return "syruprx-general"
-        if (guild?.owner || (user?.id ? ownerUserIds.includes(user.id) : false) || isMasterUser) return "setup"
-        return "commands"
-      }
-      return "general"
-    })(),
-  })
-
   if (isDataLoading || adminGuildsLoading || botGuildsLoading) {
-    console.log("[v0] GuildConfigPage: Still loading...")
     return (
       <div className="space-y-6">
         <Skeleton className="h-6 w-32" />
@@ -193,7 +163,6 @@ export default function GuildConfigPage({ params }: GuildConfigPageProps) {
   }
 
   if (!bot || !guild) {
-    console.log("[v0] GuildConfigPage: bot or guild not found, calling notFound()", { bot, guild, botsData })
     notFound()
   }
 

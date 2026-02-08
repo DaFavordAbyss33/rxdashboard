@@ -15,13 +15,6 @@ export default function BotsPage() {
 
   const bots = data?.bots || []
 
-  if (data) {
-    console.log("[v0] Bots API response:", JSON.stringify({ error: data.error, botCount: bots.length, timestamp: data.timestamp }))
-  }
-  if (error) {
-    console.log("[v0] Bots SWR error:", error)
-  }
-
   return (
     <div className="space-y-8">
       {/* Page Header */}
