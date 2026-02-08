@@ -18,6 +18,121 @@ export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: CORS_HEADERS })
 }
 
+// ---- Discord embed parsing helpers ----
+
+interface DiscordEmbed {
+  title?: string
+  description?: string
+  color?: number
+  footer?: { text?: string }
+  fields?: { name: string; value: string; inline?: boolean }[]
+  timestamp?: string
+  author?: { name?: string }
+  thumbnail?: { url?: string }
+}
+
+interface ParsedLog {
+  type: string
+  title: string
+  player: string | null
+  playerId: string | null
+  command: string | null
+  message: string | null
+  server: string | null
+  target: string | null
+}
+
+/**
+ * Parse a Discord embed into structured log fields.
+ * The Maple game sends embeds like:
+ *   title: "Command Executed"
+ *   description: "MistyReligions:82197574 ran the command: :a |REMINDER| Please do not crowd..."
+ *   footer.text: "Custom Server: a8d-961"
+ */
+function parseDiscordEmbed(embed: DiscordEmbed): ParsedLog {
+  const title = embed.title || "Unknown"
+  const description = embed.description || ""
+  const footer = embed.footer?.text || ""
+
+  // Determine log type from embed title
+  const titleLower = title.toLowerCase()
+  let type = "command"
+  if (titleLower.includes("ban") || titleLower.includes("kick") || titleLower.includes("mute") || titleLower.includes("warn")) {
+    type = "moderation"
+  } else if (titleLower.includes("admin")) {
+    type = "admin"
+  } else if (titleLower.includes("join")) {
+    type = "join"
+  } else if (titleLower.includes("leave") || titleLower.includes("left")) {
+    type = "leave"
+  } else if (titleLower.includes("system") || titleLower.includes("server")) {
+    type = "system"
+  }
+
+  // Parse description to extract player and command info
+  // Format: "PlayerName:PlayerId ran the command: :commandhere args..."
+  let player: string | null = null
+  let playerId: string | null = null
+  let command: string | null = null
+  let message: string | null = description || null
+
+  // Try to match "Username:UserId ran the command: ..." pattern
+  const cmdMatch = description.match(/^(.+?):(\d+)\s+ran the command:\s*(.+)/s)
+  if (cmdMatch) {
+    player = cmdMatch[1].trim()
+    playerId = cmdMatch[2].trim()
+    const fullCommand = cmdMatch[3].trim()
+    // Split command from arguments — command starts with :
+    const cmdParts = fullCommand.match(/^(:\S+)\s*(.*)/s)
+    if (cmdParts) {
+      command = cmdParts[1]
+      message = cmdParts[2] || null
+    } else {
+      command = fullCommand
+      message = null
+    }
+  } else {
+    // Try generic "Username:UserId did something" pattern
+    const genericMatch = description.match(/^(.+?):(\d+)\s+(.+)/s)
+    if (genericMatch) {
+      player = genericMatch[1].trim()
+      playerId = genericMatch[2].trim()
+      message = genericMatch[3].trim()
+    }
+  }
+
+  // Parse footer for server info — "Custom Server: a8d-961"
+  let server: string | null = null
+  if (footer) {
+    const serverMatch = footer.match(/(?:Custom )?Server:\s*(.+)/i)
+    if (serverMatch) {
+      server = serverMatch[1].trim()
+    } else {
+      server = footer
+    }
+  }
+
+  // Check embed fields for extra data (some embeds use structured fields)
+  let target: string | null = null
+  if (embed.fields) {
+    for (const field of embed.fields) {
+      const name = field.name.toLowerCase()
+      if (name.includes("target") || name.includes("player") && !player) {
+        if (name.includes("target")) target = field.value
+        else player = field.value
+      }
+      if (name.includes("reason") || name.includes("detail")) {
+        message = field.value
+      }
+      if (name.includes("command") && !command) {
+        command = field.value
+      }
+    }
+  }
+
+  return { type, title, player, playerId, command, message, server, target }
+}
+
 // POST /api/webhooks/rx/incoming/[webhookId] - Receive log data from Maple game
 export async function POST(
   request: Request,
@@ -28,7 +143,6 @@ export async function POST(
     console.log("[v0] Incoming webhook hit, webhookId:", webhookId)
 
     if (!webhookId || webhookId.length < 10) {
-      console.log("[v0] Invalid webhook ID, too short or missing")
       return NextResponse.json(
         { success: false, error: "Invalid webhook ID" },
         { status: 400, headers: CORS_HEADERS }
@@ -37,7 +151,6 @@ export async function POST(
 
     const botId = "syruprx" as BotId
     if (!isBotConfigured(botId)) {
-      console.log("[v0] Bot not configured:", botId)
       return NextResponse.json(
         { success: false, error: "Service unavailable" },
         { status: 503, headers: CORS_HEADERS }
@@ -46,7 +159,6 @@ export async function POST(
 
     const db = await getBotDatabase(botId)
     if (!db) {
-      console.log("[v0] Failed to get database for:", botId)
       return NextResponse.json(
         { success: false, error: "Service unavailable" },
         { status: 503, headers: CORS_HEADERS }
@@ -56,14 +168,12 @@ export async function POST(
     // Look up webhook by ID
     const webhook = await db.collection("webhooks").findOne({ webhookId })
     if (!webhook) {
-      console.log("[v0] Webhook not found in database for ID:", webhookId)
+      console.log("[v0] Webhook not found for ID:", webhookId)
       return NextResponse.json(
         { success: false, error: "Webhook not found" },
         { status: 404, headers: CORS_HEADERS }
       )
     }
-
-    console.log("[v0] Webhook found, guild:", webhook.guildId, "enabled:", webhook.enabled)
 
     if (webhook.enabled === false) {
       return NextResponse.json(
@@ -72,77 +182,97 @@ export async function POST(
       )
     }
 
-    // Parse incoming data - support both JSON and form/text formats
+    // Parse incoming body — handle any content type
     let body: Record<string, unknown>
-    const contentType = request.headers.get("content-type") || ""
-    console.log("[v0] Content-Type:", contentType)
-
     try {
-      if (contentType.includes("application/json")) {
-        body = await request.json()
-      } else if (contentType.includes("application/x-www-form-urlencoded")) {
-        const formData = await request.formData()
-        body = Object.fromEntries(formData.entries())
-      } else if (contentType.includes("text/plain")) {
-        const text = await request.text()
-        try {
-          body = JSON.parse(text)
-        } catch {
-          body = { message: text, type: "raw" }
-        }
-      } else {
-        // Try JSON first, fallback to text
-        const rawText = await request.text()
-        try {
-          body = JSON.parse(rawText)
-        } catch {
-          body = { message: rawText, type: "raw" }
-        }
+      const rawText = await request.text()
+      console.log("[v0] Raw body (first 500 chars):", rawText.substring(0, 500))
+      try {
+        body = JSON.parse(rawText)
+      } catch {
+        body = { content: rawText }
       }
     } catch (parseError) {
-      console.log("[v0] Failed to parse request body:", parseError)
+      console.log("[v0] Failed to read body:", parseError)
       return NextResponse.json(
         { success: false, error: "Failed to parse request body" },
         { status: 400, headers: CORS_HEADERS }
       )
     }
 
-    console.log("[v0] Parsed body:", JSON.stringify(body).substring(0, 500))
+    // Detect and parse Discord embed format
+    const embeds = body.embeds as DiscordEmbed[] | undefined
+    const isDiscordFormat = Array.isArray(embeds) && embeds.length > 0
 
-    // Build log entry
-    const logEntry = {
-      webhookId,
-      guildId: webhook.guildId,
-      type: (body.type as string) || "command",
-      action: (body.action as string) || (body.command as string) || "unknown",
-      player: body.player || body.executor || body.username || null,
-      playerId: body.playerId || body.userId || body.executorId || null,
-      target: body.target || body.targetPlayer || null,
-      targetId: body.targetId || body.targetPlayerId || null,
-      message: body.message || body.reason || body.details || null,
-      data: body,
-      timestamp: new Date().toISOString(),
-      ip: request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || "unknown",
+    // Process each embed as a separate log entry (usually just one)
+    const logEntries = []
+
+    if (isDiscordFormat) {
+      for (const embed of embeds) {
+        const parsed = parseDiscordEmbed(embed)
+        logEntries.push({
+          webhookId,
+          guildId: webhook.guildId,
+          type: parsed.type,
+          title: parsed.title,
+          action: parsed.command || parsed.title,
+          player: parsed.player,
+          playerId: parsed.playerId,
+          target: parsed.target,
+          command: parsed.command,
+          message: parsed.message,
+          server: parsed.server,
+          embedColor: embed.color || null,
+          rawEmbed: embed,
+          timestamp: new Date().toISOString(),
+        })
+      }
+    } else {
+      // Non-embed payload (plain text, custom JSON, etc.)
+      logEntries.push({
+        webhookId,
+        guildId: webhook.guildId,
+        type: (body.type as string) || "command",
+        title: (body.title as string) || "Log",
+        action: (body.action as string) || (body.command as string) || "unknown",
+        player: body.player || body.executor || body.username || null,
+        playerId: body.playerId || body.userId || null,
+        target: body.target || null,
+        command: body.command || null,
+        message: body.message || body.content || body.reason || null,
+        server: body.server || null,
+        embedColor: null,
+        rawEmbed: null,
+        rawData: body,
+        timestamp: new Date().toISOString(),
+      })
     }
 
-    // Store in webhook_logs collection
-    await db.collection("webhook_logs").insertOne(logEntry)
+    console.log("[v0] Storing", logEntries.length, "log entries for guild:", webhook.guildId)
 
-    // Update webhook last used timestamp and total log count
+    // Store all log entries
+    if (logEntries.length > 0) {
+      await db.collection("webhook_logs").insertMany(logEntries)
+    }
+
+    // Update webhook stats
     await db.collection("webhooks").updateOne(
       { webhookId },
       {
         $set: { lastUsedAt: new Date().toISOString() },
-        $inc: { totalLogs: 1 },
+        $inc: { totalLogs: logEntries.length },
       }
     )
 
-    // Ensure indexes (idempotent)
+    // Ensure indexes (idempotent, runs once effectively)
     await db.collection("webhook_logs").createIndex({ guildId: 1, timestamp: -1 }).catch(() => {})
     await db.collection("webhook_logs").createIndex({ webhookId: 1, timestamp: -1 }).catch(() => {})
-    await db.collection("webhook_logs").createIndex({ timestamp: 1 }, { expireAfterSeconds: 30 * 24 * 60 * 60 }).catch(() => {}) // 30 day TTL
+    await db.collection("webhook_logs").createIndex(
+      { timestamp: 1 },
+      { expireAfterSeconds: 30 * 24 * 60 * 60 }
+    ).catch(() => {})
 
-    // Trim old logs if over limit per guild
+    // Trim old logs if over limit
     const logCount = await db.collection("webhook_logs").countDocuments({ guildId: webhook.guildId })
     if (logCount > MAX_WEBHOOK_LOGS) {
       const excess = logCount - MAX_WEBHOOK_LOGS
@@ -152,7 +282,7 @@ export async function POST(
         .limit(excess)
         .project({ _id: 1 })
         .toArray()
-      
+
       if (oldest.length > 0) {
         await db.collection("webhook_logs").deleteMany({
           _id: { $in: oldest.map(d => d._id) },
@@ -160,29 +290,47 @@ export async function POST(
       }
     }
 
-    // Forward to Discord webhook if configured
+    // Forward to Discord webhook — send the ORIGINAL embed payload as-is
     if (webhook.discordWebhookUrl) {
       try {
-        const embed = buildDiscordEmbed(logEntry)
+        // If the incoming data was already in Discord format, forward it directly
+        const discordPayload = isDiscordFormat
+          ? {
+              content: body.content || undefined,
+              username: body.username || "RX Command Logs",
+              avatar_url: body.avatar_url || undefined,
+              embeds: embeds,
+            }
+          : {
+              username: "RX Command Logs",
+              embeds: logEntries.map(entry => ({
+                title: entry.title || "Command Log",
+                description: [
+                  entry.player && `**Executor:** ${entry.player}${entry.playerId ? `:${entry.playerId}` : ""}`,
+                  entry.command && `**Command:** \`${entry.command}\``,
+                  entry.message && `**Details:** ${String(entry.message).substring(0, 1024)}`,
+                  entry.target && `**Target:** ${entry.target}`,
+                ].filter(Boolean).join("\n"),
+                color: 0x7c3aed,
+                footer: entry.server ? { text: `Server: ${entry.server}` } : undefined,
+                timestamp: entry.timestamp,
+              })),
+            }
+
         await fetch(webhook.discordWebhookUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            username: "RX Command Logs",
-            avatar_url: "https://rxdashboard.vercel.app/images/rxsystems.png",
-            embeds: [embed],
-          }),
+          body: JSON.stringify(discordPayload),
         })
       } catch (discordError) {
-        // Don't fail the webhook if Discord forwarding fails
-        console.error("[webhook] Failed to forward to Discord:", discordError)
+        console.error("[v0] Failed to forward to Discord:", discordError)
       }
     }
 
-    console.log("[v0] Log stored successfully for guild:", webhook.guildId)
+    console.log("[v0] Webhook processed successfully for guild:", webhook.guildId)
 
     return NextResponse.json(
-      { success: true, message: "Log received" },
+      { success: true, message: "Log received", count: logEntries.length },
       { headers: CORS_HEADERS }
     )
   } catch (error) {
@@ -191,47 +339,5 @@ export async function POST(
       { success: false, error: "Internal server error" },
       { status: 500, headers: CORS_HEADERS }
     )
-  }
-}
-
-// Build a Discord embed from a log entry
-function buildDiscordEmbed(log: Record<string, unknown>) {
-  const action = (log.action as string) || "Unknown Action"
-  const player = (log.player as string) || "Unknown"
-  const target = log.target as string | null
-  const message = log.message as string | null
-  const type = (log.type as string) || "command"
-
-  // Color based on type
-  const colorMap: Record<string, number> = {
-    command: 0x7c3aed, // Purple
-    moderation: 0xef4444, // Red
-    admin: 0xf59e0b, // Amber
-    system: 0x3b82f6, // Blue
-    join: 0x22c55e, // Green
-    leave: 0x6b7280, // Gray
-  }
-
-  const fields = [
-    { name: "Action", value: `\`${action}\``, inline: true },
-    { name: "Executor", value: player, inline: true },
-  ]
-
-  if (target) {
-    fields.push({ name: "Target", value: target, inline: true })
-  }
-
-  if (message) {
-    fields.push({ name: "Details", value: message.substring(0, 1024), inline: false })
-  }
-
-  return {
-    title: `${type.charAt(0).toUpperCase() + type.slice(1)} Log`,
-    color: colorMap[type.toLowerCase()] || 0x7c3aed,
-    fields,
-    timestamp: log.timestamp as string,
-    footer: {
-      text: "RX Systems Webhook",
-    },
   }
 }
