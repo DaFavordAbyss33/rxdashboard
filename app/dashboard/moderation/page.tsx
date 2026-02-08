@@ -12,7 +12,8 @@ import { Input } from "@/components/ui/input"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { 
   Bot, Server, Shield, AlertTriangle, ChevronLeft, ChevronRight, Search, 
-  ScrollText, Clock, UserX, Ban, Settings, Megaphone, Power, Filter 
+  ScrollText, Clock, UserX, Ban, Settings, Megaphone, Power, Filter,
+  Monitor, Webhook, ExternalLink, Gavel
 } from "lucide-react"
 import { SyrupRxGeneralTab } from "@/components/syruprx/general-tab"
 import Image from "next/image"
@@ -40,8 +41,8 @@ export default function ModerationPage() {
   const [currentPage, setCurrentPage] = useState(1)
   const [activeTab, setActiveTab] = useState("server")
   const [auditPage, setAuditPage] = useState(1)
-  const [auditCategory, setAuditCategory] = useState("all")
   const [auditSearch, setAuditSearch] = useState("")
+  const [sourceFilter, setSourceFilter] = useState("all")
 
   // Fetch guilds where user has admin role for the selected bot
   const { data: adminGuildsData, isLoading: adminGuildsLoading } = useSWR(
@@ -57,12 +58,12 @@ export default function ModerationPage() {
     { refreshInterval: 60000 }
   )
 
-  // Fetch audit logs when audit tab is active
+  // Fetch unified audit logs (dashboard + webhook) when audit tab is active
   const auditQueryParams = new URLSearchParams({
     guildId: selectedGuildId || "",
     page: String(auditPage),
     limit: "50",
-    ...(auditCategory !== "all" && { category: auditCategory }),
+    ...(sourceFilter !== "all" && { source: sourceFilter }),
     ...(auditSearch && { search: auditSearch }),
   })
   const { data: auditData, isLoading: auditLoading } = useSWR(
@@ -89,10 +90,7 @@ export default function ModerationPage() {
     const botGuilds: BotGuild[] = botGuildsData?.guilds || []
     const installedGuildIds = new Set(botGuilds.map((g) => g.id))
 
-    // For master users: use bot guilds data (has all installed guilds with details)
-    // For regular users: filter from their own guilds (allGuilds from auth context)
     if (isMaster) {
-      // Master users can access all installed guilds
       return botGuilds.map((guild) => ({
         id: guild.id,
         name: guild.name,
@@ -103,11 +101,6 @@ export default function ModerationPage() {
       }))
     }
 
-    // Regular users: filter to guilds where:
-    // 1. They have admin role access (from bot config), OR
-    // 2. They are the owner, OR
-    // 3. They have Discord MANAGE_GUILD/ADMINISTRATOR permission
-    // AND the bot is installed in that guild
     return allGuilds
       .filter((guild) => {
         const hasAdminRole = adminGuildIds.has(guild.id)
@@ -354,7 +347,7 @@ export default function ModerationPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <Tabs value={activeTab} onValueChange={(val) => { setActiveTab(val); setAuditPage(1) }}>
+            <Tabs value={activeTab} onValueChange={(val) => { setActiveTab(val); setAuditPage(1); setSourceFilter("all") }}>
               <TabsList className="mb-4">
                 <TabsTrigger value="server" className="gap-2">
                   <Server className="h-4 w-4" />
@@ -371,16 +364,16 @@ export default function ModerationPage() {
               </TabsContent>
 
               <TabsContent value="audit">
-                <AuditLogTab
+                <UnifiedAuditLogTab
                   logs={auditData?.logs || []}
                   total={auditData?.total || 0}
                   page={auditPage}
                   totalPages={auditData?.totalPages || 0}
                   isLoading={auditLoading}
-                  category={auditCategory}
+                  sourceFilter={sourceFilter}
                   search={auditSearch}
                   onPageChange={setAuditPage}
-                  onCategoryChange={(cat) => { setAuditCategory(cat); setAuditPage(1) }}
+                  onSourceFilterChange={(s) => { setSourceFilter(s); setAuditPage(1) }}
                   onSearchChange={setAuditSearch}
                 />
               </TabsContent>
@@ -404,7 +397,24 @@ export default function ModerationPage() {
   )
 }
 
-// Audit Log Tab Component
+
+// ===== Unified Audit Log Tab =====
+
+const SOURCE_FILTERS = [
+  { value: "all", label: "All Sources", icon: ScrollText },
+  { value: "Dashboard", label: "Dashboard", icon: Monitor },
+  { value: "Webhook", label: "Webhook", icon: Webhook },
+  { value: "Server", label: "Server", icon: Server },
+  { value: "Moderation", label: "Moderation", icon: Gavel },
+]
+
+const SOURCE_TAG_STYLES: Record<string, string> = {
+  Dashboard: "bg-blue-500/15 text-blue-400 border-blue-500/30",
+  Webhook: "bg-amber-500/15 text-amber-400 border-amber-500/30",
+  Server: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
+  Moderation: "bg-red-500/15 text-red-400 border-red-500/30",
+}
+
 const ACTION_ICONS: Record<string, typeof Clock> = {
   kick: UserX,
   ban: Ban,
@@ -427,18 +437,10 @@ const ACTION_COLORS: Record<string, string> = {
   config_update: "text-primary",
 }
 
-const CATEGORY_LABELS: Record<string, string> = {
-  all: "All",
-  moderation: "Moderation",
-  server: "Server",
-  config: "Config",
-  system: "System",
-}
-
-interface AuditLogEntry {
+interface UnifiedLogEntry {
   _id: string
-  botId: string
-  guildId: string
+  source: "dashboard" | "webhook"
+  tags: string[]
   action: string
   category: string
   details: Record<string, unknown>
@@ -447,29 +449,43 @@ interface AuditLogEntry {
   success: boolean
   error?: string
   timestamp: string
+  webhookData?: {
+    title: string
+    command: string | null
+    player: string | null
+    playerId: string | null
+    playerProfileUrl: string | null
+    target: string | null
+    targetId: string | null
+    targetProfileUrl: string | null
+    message: string | null
+    server: string | null
+    embedColor: number | null
+    type: string
+  } | null
 }
 
-function AuditLogTab({
+function UnifiedAuditLogTab({
   logs,
   total,
   page,
   totalPages,
   isLoading,
-  category,
+  sourceFilter,
   search,
   onPageChange,
-  onCategoryChange,
+  onSourceFilterChange,
   onSearchChange,
 }: {
-  logs: AuditLogEntry[]
+  logs: UnifiedLogEntry[]
   total: number
   page: number
   totalPages: number
   isLoading: boolean
-  category: string
+  sourceFilter: string
   search: string
   onPageChange: (p: number) => void
-  onCategoryChange: (c: string) => void
+  onSourceFilterChange: (s: string) => void
   onSearchChange: (s: string) => void
 }) {
   function formatTimestamp(ts: string) {
@@ -493,7 +509,22 @@ function AuditLogTab({
       .replace(/\b\w/g, (c) => c.toUpperCase())
   }
 
-  function getActionDescription(entry: AuditLogEntry) {
+  function getEntryDescription(entry: UnifiedLogEntry) {
+    // Webhook source: rich display from webhookData
+    if (entry.source === "webhook" && entry.webhookData) {
+      const wd = entry.webhookData
+      const parts: string[] = []
+      if (wd.title) parts.push(wd.title)
+      if (wd.player && wd.command) {
+        parts.push(`${wd.player} ran ${wd.command}`)
+      } else if (wd.command) {
+        parts.push(`Command: ${wd.command}`)
+      }
+      if (wd.message) parts.push(wd.message.slice(0, 120))
+      return parts.join(" - ") || formatAction(entry.action)
+    }
+
+    // Dashboard source
     const { action, details, targetUser } = entry
     switch (action) {
       case "kick":
@@ -507,9 +538,9 @@ function AuditLogTab({
       case "shutdown":
         return "Shut down the server"
       case "settings":
-        return `Updated server settings`
+        return "Updated server settings"
       case "banner":
-        return `Set banner text`
+        return "Set banner text"
       case "config_update": {
         const fields = (details.changedFields as string[]) || []
         if (fields.length === 0) return "Updated configuration"
@@ -523,7 +554,27 @@ function AuditLogTab({
 
   return (
     <div className="space-y-4">
-      {/* Filters */}
+      {/* Source Filter Chips */}
+      <div className="flex flex-wrap items-center gap-2">
+        {SOURCE_FILTERS.map((sf) => {
+          const Icon = sf.icon
+          const isActive = sourceFilter === sf.value
+          return (
+            <Button
+              key={sf.value}
+              variant={isActive ? "default" : "outline"}
+              size="sm"
+              onClick={() => onSourceFilterChange(sf.value)}
+              className="gap-1.5"
+            >
+              <Icon className="h-3.5 w-3.5" />
+              {sf.label}
+            </Button>
+          )
+        })}
+      </div>
+
+      {/* Search & Count */}
       <div className="flex flex-wrap items-center gap-3">
         <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -534,21 +585,6 @@ function AuditLogTab({
             className="pl-9"
           />
         </div>
-        <Select value={category} onValueChange={onCategoryChange}>
-          <SelectTrigger className="w-[160px]">
-            <div className="flex items-center gap-2">
-              <Filter className="h-4 w-4" />
-              <SelectValue />
-            </div>
-          </SelectTrigger>
-          <SelectContent>
-            {Object.entries(CATEGORY_LABELS).map(([value, label]) => (
-              <SelectItem key={value} value={value}>
-                {label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
         <Badge variant="secondary" className="text-xs">
           {total.toLocaleString()} total entries
         </Badge>
@@ -558,71 +594,26 @@ function AuditLogTab({
       {isLoading ? (
         <div className="space-y-3">
           {[...Array(5)].map((_, i) => (
-            <Skeleton key={i} className="h-16 rounded-lg" />
+            <Skeleton key={i} className="h-20 rounded-lg" />
           ))}
         </div>
       ) : logs.length === 0 ? (
         <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed p-12 text-center">
           <ScrollText className="h-10 w-10 text-muted-foreground" />
           <div>
-            <p className="font-medium">No audit logs yet</p>
+            <p className="font-medium">No logs found</p>
             <p className="mt-1 text-sm text-muted-foreground">
-              Actions executed on this server will appear here.
+              {search || sourceFilter !== "all"
+                ? "Try adjusting your filters or search query."
+                : "Actions executed on this server will appear here."}
             </p>
           </div>
         </div>
       ) : (
         <div className="space-y-2">
-          {logs.map((entry) => {
-            const IconComponent = ACTION_ICONS[entry.action] || Clock
-            const colorClass = ACTION_COLORS[entry.action] || "text-muted-foreground"
-            return (
-              <div
-                key={entry._id}
-                className="flex items-start gap-3 rounded-lg border p-3 transition-colors hover:bg-secondary/30"
-              >
-                <div className={`mt-0.5 shrink-0 ${colorClass}`}>
-                  <IconComponent className="h-4 w-4" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-medium text-sm">
-                      {formatAction(entry.action)}
-                    </span>
-                    <Badge variant="outline" className="text-xs">
-                      {entry.category}
-                    </Badge>
-                    {!entry.success && (
-                      <Badge variant="destructive" className="text-xs">
-                        Failed
-                      </Badge>
-                    )}
-                  </div>
-                  <p className="mt-0.5 text-sm text-muted-foreground truncate">
-                    {getActionDescription(entry)}
-                  </p>
-                  <div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
-                    <span className="flex items-center gap-1">
-                      {entry.executedBy.avatar ? (
-                        <Image
-                          src={`https://cdn.discordapp.com/avatars/${entry.executedBy.id}/${entry.executedBy.avatar}.png`}
-                          alt=""
-                          width={14}
-                          height={14}
-                          className="rounded-full"
-                        />
-                      ) : null}
-                      {entry.executedBy.username}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <Clock className="h-3 w-3" />
-                      {formatTimestamp(entry.timestamp)}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            )
-          })}
+          {logs.map((entry) => (
+            <UnifiedLogRow key={entry._id} entry={entry} formatTimestamp={formatTimestamp} getDescription={getEntryDescription} />
+          ))}
         </div>
       )}
 
@@ -656,4 +647,163 @@ function AuditLogTab({
       )}
     </div>
   )
+}
+
+
+// ===== Individual Log Row =====
+
+function UnifiedLogRow({
+  entry,
+  formatTimestamp,
+  getDescription,
+}: {
+  entry: UnifiedLogEntry
+  formatTimestamp: (ts: string) => string
+  getDescription: (entry: UnifiedLogEntry) => string
+}) {
+  const isWebhook = entry.source === "webhook"
+  const wd = entry.webhookData
+
+  // Icon for the action
+  const IconComponent = isWebhook ? Webhook : (ACTION_ICONS[entry.action] || Clock)
+  const colorClass = isWebhook
+    ? "text-amber-500"
+    : (ACTION_COLORS[entry.action] || "text-muted-foreground")
+
+  // Left color bar for webhook logs (use embed color)
+  const barColor = isWebhook && wd?.embedColor
+    ? `#${wd.embedColor.toString(16).padStart(6, "0")}`
+    : undefined
+
+  return (
+    <div className="flex items-start gap-3 rounded-lg border border-border p-3 transition-colors hover:bg-secondary/30">
+      {/* Color bar for webhook entries */}
+      {barColor ? (
+        <div
+          className="mt-0.5 h-12 w-1 shrink-0 rounded-full"
+          style={{ backgroundColor: barColor }}
+        />
+      ) : (
+        <div className={`mt-0.5 shrink-0 ${colorClass}`}>
+          <IconComponent className="h-4 w-4" />
+        </div>
+      )}
+
+      <div className="flex-1 min-w-0">
+        {/* Top row: action + tags + time */}
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            {barColor && (
+              <div className={`shrink-0 ${colorClass}`}>
+                <IconComponent className="h-3.5 w-3.5" />
+              </div>
+            )}
+            <span className="text-sm font-medium text-card-foreground">
+              {isWebhook && wd?.title ? wd.title : formatAction(entry.action)}
+            </span>
+            {/* Source tags */}
+            {entry.tags.map((tag) => (
+              <span
+                key={tag}
+                className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${SOURCE_TAG_STYLES[tag] || "bg-secondary text-secondary-foreground border-border"}`}
+              >
+                {tag}
+              </span>
+            ))}
+            {!entry.success && (
+              <Badge variant="destructive" className="text-xs">
+                Failed
+              </Badge>
+            )}
+          </div>
+          <span className="shrink-0 text-xs text-muted-foreground">
+            {formatTimestamp(entry.timestamp)}
+          </span>
+        </div>
+
+        {/* Description */}
+        <p className="mt-0.5 text-sm text-muted-foreground truncate">
+          {getDescription(entry)}
+        </p>
+
+        {/* Footer: who executed + target + server */}
+        <div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
+          {/* Executor */}
+          {entry.executedBy.username !== "System" && (
+            <span className="flex items-center gap-1">
+              {!isWebhook && entry.executedBy.avatar ? (
+                <Image
+                  src={`https://cdn.discordapp.com/avatars/${entry.executedBy.id}/${entry.executedBy.avatar}.png`}
+                  alt=""
+                  width={14}
+                  height={14}
+                  className="rounded-full"
+                />
+              ) : null}
+              {isWebhook && wd?.playerProfileUrl ? (
+                <a
+                  href={wd.playerProfileUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-0.5 text-primary hover:underline"
+                >
+                  {entry.executedBy.username}
+                  <ExternalLink className="h-2.5 w-2.5" />
+                </a>
+              ) : (
+                <span className="text-card-foreground">{entry.executedBy.username}</span>
+              )}
+            </span>
+          )}
+
+          {/* Webhook target */}
+          {isWebhook && wd?.target && (
+            <span>
+              {"Target: "}
+              {wd.targetProfileUrl ? (
+                <a
+                  href={wd.targetProfileUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-0.5 text-card-foreground hover:text-primary hover:underline"
+                >
+                  {wd.target}
+                  <ExternalLink className="ml-0.5 h-2.5 w-2.5" />
+                </a>
+              ) : (
+                <span className="text-card-foreground">{wd.target}</span>
+              )}
+            </span>
+          )}
+
+          {/* Dashboard target */}
+          {!isWebhook && entry.targetUser?.name && (
+            <span>
+              {"Target: "}
+              <span className="text-card-foreground">{entry.targetUser.name}</span>
+            </span>
+          )}
+
+          {/* Server (webhook) */}
+          {isWebhook && wd?.server && (
+            <span>
+              {"Game server: "}
+              <span className="text-card-foreground">{wd.server}</span>
+            </span>
+          )}
+
+          <span className="flex items-center gap-1">
+            <Clock className="h-3 w-3" />
+            {new Date(entry.timestamp).toLocaleString()}
+          </span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function formatAction(action: string) {
+  return action
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase())
 }
