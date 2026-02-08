@@ -103,7 +103,7 @@ export function BotStatusCard({ bot, installedCount }: BotStatusCardProps) {
             Subscription
           </Badge>
         )}
-        {bot.capabilities.features?.slice(0, 2).map((feature) => (
+        {bot.capabilities?.features?.slice(0, 2).map((feature) => (
           <Badge key={feature} variant="secondary" className="text-xs">
             {feature}
           </Badge>
