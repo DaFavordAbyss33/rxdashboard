@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server"
 import { cookies } from "next/headers"
-import { randomBytes } from "crypto"
 import { getBotDatabase, isBotConfigured, type BotId } from "@/lib/mongodb"
 import { isMasterUser } from "@/lib/admin"
 import { BOT_TOKENS } from "@/lib/discord"
@@ -28,7 +27,6 @@ async function verifyWebhookPermission(guildId: string): Promise<{ allowed: bool
       return { allowed: false }
     }
     
-    // Master admins can manage all guilds
     if (session.isAdmin === true || isMasterUser(userId)) {
       return { allowed: true, userId, username }
     }
@@ -39,7 +37,6 @@ async function verifyWebhookPermission(guildId: string): Promise<{ allowed: bool
       return { allowed: false }
     }
     
-    // Check ownerUserIds from database
     if (isBotConfigured(botId)) {
       const db = await getBotDatabase(botId)
       if (db) {
@@ -51,7 +48,6 @@ async function verifyWebhookPermission(guildId: string): Promise<{ allowed: bool
       }
     }
     
-    // Check if user is guild owner via bot token
     const guildResponse = await fetch(
       `${DISCORD_API_BASE}/guilds/${guildId}`,
       { headers: { Authorization: `Bot ${botToken}` } }
@@ -116,22 +112,15 @@ export async function GET(request: Request) {
       })
     }
 
-    // Mask discord webhook URL (show only last 20 chars)
-    const maskedDiscordUrl = webhook.discordWebhookUrl
-      ? "••••••••" + webhook.discordWebhookUrl.slice(-20)
-      : null
-
     return NextResponse.json({
       success: true,
       webhook: {
-        id: webhook.webhookId,
+        id: webhook._id.toString(),
         guildId: webhook.guildId,
-        rxWebhookUrl: `${getBaseUrl(request)}/api/webhooks/rx/incoming/${webhook.webhookId}`,
-        discordWebhookUrl: maskedDiscordUrl,
-        hasDiscordWebhook: !!webhook.discordWebhookUrl,
+        channelId: webhook.channelId,
         enabled: webhook.enabled !== false,
         createdAt: webhook.createdAt,
-        lastUsedAt: webhook.lastUsedAt,
+        lastSyncedAt: webhook.lastSyncedAt || null,
         totalLogs: webhook.totalLogs || 0,
       },
     })
@@ -144,16 +133,11 @@ export async function GET(request: Request) {
   }
 }
 
-function getBaseUrl(request: Request): string {
-  const url = new URL(request.url)
-  return `${url.protocol}//${url.host}`
-}
-
-// POST /api/webhooks/rx - Generate a new webhook for a guild
+// POST /api/webhooks/rx - Save channel config for a guild
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { guildId, discordWebhookUrl } = body
+    const { guildId, channelId } = body
 
     if (!guildId) {
       return NextResponse.json(
@@ -162,10 +146,9 @@ export async function POST(request: Request) {
       )
     }
 
-    // Validate discord webhook URL if provided
-    if (discordWebhookUrl && !discordWebhookUrl.startsWith("https://discord.com/api/webhooks/")) {
+    if (!channelId || !/^\d{17,20}$/.test(channelId)) {
       return NextResponse.json(
-        { success: false, error: "Invalid Discord webhook URL. Must start with https://discord.com/api/webhooks/" },
+        { success: false, error: "A valid Discord channel ID is required" },
         { status: 400 }
       )
     }
@@ -186,6 +169,36 @@ export async function POST(request: Request) {
       )
     }
 
+    // Verify bot can actually read messages from that channel
+    const botToken = BOT_TOKENS[botId]
+    if (!botToken) {
+      return NextResponse.json(
+        { success: false, error: "Bot token not configured" },
+        { status: 500 }
+      )
+    }
+
+    const channelCheck = await fetch(
+      `${DISCORD_API_BASE}/channels/${channelId}`,
+      { headers: { Authorization: `Bot ${botToken}` } }
+    )
+
+    if (!channelCheck.ok) {
+      return NextResponse.json(
+        { success: false, error: "Cannot access that channel. Make sure the SyrupRx bot has Read Message History permission in the channel." },
+        { status: 400 }
+      )
+    }
+
+    const channelData = await channelCheck.json()
+    // Verify the channel belongs to the right guild
+    if (channelData.guild_id !== guildId) {
+      return NextResponse.json(
+        { success: false, error: "That channel does not belong to this server" },
+        { status: 400 }
+      )
+    }
+
     const db = await getBotDatabase(botId)
     if (!db) {
       return NextResponse.json(
@@ -194,82 +207,42 @@ export async function POST(request: Request) {
       )
     }
 
-    // Check if webhook already exists for this guild
     const existing = await db.collection("webhooks").findOne({ guildId })
-    
+
     if (existing) {
-      // Update existing webhook (regenerate ID)
-      const webhookId = randomBytes(24).toString("hex")
-      
       await db.collection("webhooks").updateOne(
         { guildId },
         {
           $set: {
-            webhookId,
-            discordWebhookUrl: discordWebhookUrl || existing.discordWebhookUrl || null,
+            channelId,
             enabled: true,
             updatedAt: new Date().toISOString(),
             updatedBy: username || "unknown",
           },
         }
       )
-
-      // Audit log
-      if (userId) {
-        writeAuditLog(botId, {
-          botId,
-          guildId,
-          action: "webhook_regenerated",
-          category: "config",
-          details: { hasDiscordWebhook: !!discordWebhookUrl },
-          executedBy: {
-            id: userId,
-            username: username || "unknown",
-          },
-          success: true,
-        }).catch(() => {})
-      }
-
-      const rxUrl = `${getBaseUrl(request)}/api/webhooks/rx/incoming/${webhookId}`
-
-      return NextResponse.json({
-        success: true,
-        message: "Webhook regenerated successfully. Update the URL in your Maple server.",
-        webhook: {
-          id: webhookId,
-          guildId,
-          rxWebhookUrl: rxUrl,
-          hasDiscordWebhook: !!discordWebhookUrl || !!existing.discordWebhookUrl,
-          enabled: true,
-        },
+    } else {
+      await db.collection("webhooks").insertOne({
+        guildId,
+        channelId,
+        enabled: true,
+        totalLogs: 0,
+        lastSyncedAt: null,
+        lastMessageId: null,
+        createdAt: new Date().toISOString(),
+        createdBy: username || "unknown",
       })
+
+      await db.collection("webhooks").createIndex({ guildId: 1 }, { unique: true }).catch(() => {})
     }
 
-    // Create new webhook
-    const webhookId = randomBytes(24).toString("hex")
-    
-    await db.collection("webhooks").insertOne({
-      webhookId,
-      guildId,
-      discordWebhookUrl: discordWebhookUrl || null,
-      enabled: true,
-      totalLogs: 0,
-      createdAt: new Date().toISOString(),
-      createdBy: username || "unknown",
-    })
-
-    // Ensure indexes
-    await db.collection("webhooks").createIndex({ webhookId: 1 }, { unique: true }).catch(() => {})
-    await db.collection("webhooks").createIndex({ guildId: 1 }, { unique: true }).catch(() => {})
-
-    // Audit log
     if (userId) {
       writeAuditLog(botId, {
         botId,
         guildId,
-        action: "webhook_created",
+        action: existing ? "webhook_channel_updated" : "webhook_created",
         category: "config",
-        details: { hasDiscordWebhook: !!discordWebhookUrl },
+        details: { channelId },
         executedBy: {
           id: userId,
           username: username || "unknown",
@@ -278,45 +251,30 @@ export async function POST(request: Request) {
       }).catch(() => {})
     }
 
-    const rxUrl = `${getBaseUrl(request)}/api/webhooks/rx/incoming/${webhookId}`
-
     return NextResponse.json({
       success: true,
-      message: "Webhook created successfully. Add the RX Webhook URL to your Maple server.",
-      webhook: {
-        id: webhookId,
-        guildId,
-        rxWebhookUrl: rxUrl,
-        hasDiscordWebhook: !!discordWebhookUrl,
-        enabled: true,
-      },
+      message: existing
+        ? "Log channel updated. Run a sync to pull logs."
+        : "Log channel connected! Run a sync to pull logs from Discord.",
     })
   } catch (error) {
-    console.error("Failed to create webhook:", error)
+    console.error("Failed to save webhook config:", error)
     return NextResponse.json(
-      { success: false, error: "Failed to create webhook" },
+      { success: false, error: "Failed to save configuration" },
       { status: 500 }
     )
   }
 }
 
-// PUT /api/webhooks/rx - Update webhook settings (discord URL, enabled)
+// PUT /api/webhooks/rx - Update webhook settings (enabled, channelId)
 export async function PUT(request: Request) {
   try {
     const body = await request.json()
-    const { guildId, discordWebhookUrl, enabled } = body
+    const { guildId, enabled, channelId } = body
 
     if (!guildId) {
       return NextResponse.json(
         { success: false, error: "Guild ID is required" },
-        { status: 400 }
-      )
-    }
-
-    // Validate discord webhook URL if provided and not clearing
-    if (discordWebhookUrl && discordWebhookUrl !== "" && !discordWebhookUrl.startsWith("https://discord.com/api/webhooks/")) {
-      return NextResponse.json(
-        { success: false, error: "Invalid Discord webhook URL" },
         { status: 400 }
       )
     }
@@ -348,7 +306,7 @@ export async function PUT(request: Request) {
     const existing = await db.collection("webhooks").findOne({ guildId })
     if (!existing) {
       return NextResponse.json(
-        { success: false, error: "No webhook found for this guild. Generate one first." },
+        { success: false, error: "No webhook config found for this guild" },
         { status: 404 }
       )
     }
@@ -358,17 +316,36 @@ export async function PUT(request: Request) {
       updatedBy: username || "unknown",
     }
 
-    if (discordWebhookUrl !== undefined) {
-      // If it's a masked value, keep the existing
-      if (discordWebhookUrl.startsWith("••••••••")) {
-        // Don't update - keep existing
-      } else {
-        updateFields.discordWebhookUrl = discordWebhookUrl || null
-      }
-    }
-
     if (enabled !== undefined) {
       updateFields.enabled = enabled
+    }
+
+    if (channelId && /^\d{17,20}$/.test(channelId)) {
+      // Verify bot can access the new channel
+      const botToken = BOT_TOKENS[botId]
+      if (botToken) {
+        const channelCheck = await fetch(
+          `${DISCORD_API_BASE}/channels/${channelId}`,
+          { headers: { Authorization: `Bot ${botToken}` } }
+        )
+        if (!channelCheck.ok) {
+          return NextResponse.json(
+            { success: false, error: "Cannot access that channel. Make sure SyrupRx has Read Message History permission." },
+            { status: 400 }
+          )
+        }
+        const channelData = await channelCheck.json()
+        if (channelData.guild_id !== guildId) {
+          return NextResponse.json(
+            { success: false, error: "That channel does not belong to this server" },
+            { status: 400 }
+          )
+        }
+      }
+      updateFields.channelId = channelId
+      // Reset sync state when channel changes
+      updateFields.lastMessageId = null
+      updateFields.lastSyncedAt = null
     }
 
     await db.collection("webhooks").updateOne(
@@ -376,7 +353,6 @@ export async function PUT(request: Request) {
       { $set: updateFields }
     )
 
-    // Audit log
     if (userId) {
       writeAuditLog(botId, {
         botId,
@@ -407,7 +383,7 @@ export async function PUT(request: Request) {
   }
 }
 
-// DELETE /api/webhooks/rx - Delete webhook for a guild
+// DELETE /api/webhooks/rx - Delete webhook config for a guild
 export async function DELETE(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
@@ -445,9 +421,7 @@ export async function DELETE(request: Request) {
     }
 
     await db.collection("webhooks").deleteOne({ guildId })
-    // Optionally clean up logs too (keep them for now)
 
-    // Audit log
     if (userId) {
       writeAuditLog(botId, {
         botId,
@@ -465,7 +439,7 @@ export async function DELETE(request: Request) {
 
     return NextResponse.json({
       success: true,
-      message: "Webhook deleted successfully.",
+      message: "Webhook configuration deleted.",
     })
   } catch (error) {
     console.error("Failed to delete webhook:", error)
