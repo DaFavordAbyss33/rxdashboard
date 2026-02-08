@@ -4,6 +4,20 @@ import { getBotDatabase, isBotConfigured } from "@/lib/mongodb"
 import { resolveUserId } from "@/lib/roblox"
 import { BOT_TOKENS } from "@/lib/discord"
 import { isMasterUser } from "@/lib/admin"
+import { writeAuditLog } from "@/lib/audit-log"
+
+// Helper to get current session user info for audit logging
+async function getSessionUser(): Promise<{ id: string; username: string; avatar?: string } | null> {
+  const cookieStore = await cookies()
+  const sessionCookie = cookieStore.get("discord_session")
+  if (!sessionCookie) return null
+  try {
+    const session = JSON.parse(sessionCookie.value)
+    return session.user || null
+  } catch {
+    return null
+  }
+}
 
 export const dynamic = "force-dynamic"
 
@@ -332,6 +346,40 @@ export async function POST(request: Request) {
       } catch {
         // Kick failed silently - ban was still successful
       }
+    }
+
+    // Write audit log
+    const sessionUser = await getSessionUser()
+    if (sessionUser) {
+      const categoryMap: Record<string, "moderation" | "server" | "system"> = {
+        kick: "moderation",
+        ban: "moderation",
+        unban: "moderation",
+        announce: "server",
+        settings: "server",
+        banner: "server",
+        shutdown: "system",
+      }
+
+      writeAuditLog("syruprx", {
+        botId: "syruprx",
+        guildId,
+        action,
+        category: categoryMap[action] || "server",
+        details: {
+          ...params,
+          resolvedUserId: resolvedUserId || undefined,
+        },
+        executedBy: {
+          id: sessionUser.id,
+          username: sessionUser.username,
+          avatar: sessionUser.avatar,
+        },
+        targetUser: resolvedUserId
+          ? { id: resolvedUserId, name: params.userId || params.identifier || String(resolvedUserId) }
+          : undefined,
+        success: true,
+      }).catch(() => {}) // Non-blocking
     }
 
     return NextResponse.json({ success: true, data, message: `${action} executed successfully` })

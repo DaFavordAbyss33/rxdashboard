@@ -9,7 +9,11 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Bot, Server, Shield, AlertTriangle, ChevronLeft, ChevronRight, Search } from "lucide-react"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { 
+  Bot, Server, Shield, AlertTriangle, ChevronLeft, ChevronRight, Search, 
+  ScrollText, Clock, UserX, Ban, Settings, Megaphone, Power, Filter 
+} from "lucide-react"
 import { SyrupRxGeneralTab } from "@/components/syruprx/general-tab"
 import Image from "next/image"
 
@@ -34,6 +38,10 @@ export default function ModerationPage() {
   const [selectedGuildId, setSelectedGuildId] = useState<string>("")
   const [guildSearchQuery, setGuildSearchQuery] = useState("")
   const [currentPage, setCurrentPage] = useState(1)
+  const [activeTab, setActiveTab] = useState("server")
+  const [auditPage, setAuditPage] = useState(1)
+  const [auditCategory, setAuditCategory] = useState("all")
+  const [auditSearch, setAuditSearch] = useState("")
 
   // Fetch guilds where user has admin role for the selected bot
   const { data: adminGuildsData, isLoading: adminGuildsLoading } = useSWR(
@@ -47,6 +55,22 @@ export default function ModerationPage() {
     selectedBotId ? `/api/bots/${selectedBotId}/guilds` : null,
     fetcher,
     { refreshInterval: 60000 }
+  )
+
+  // Fetch audit logs when audit tab is active
+  const auditQueryParams = new URLSearchParams({
+    guildId: selectedGuildId || "",
+    page: String(auditPage),
+    limit: "50",
+    ...(auditCategory !== "all" && { category: auditCategory }),
+    ...(auditSearch && { search: auditSearch }),
+  })
+  const { data: auditData, isLoading: auditLoading } = useSWR(
+    selectedGuildId && selectedBotId && activeTab === "audit"
+      ? `/api/bots/${selectedBotId}/audit-logs?${auditQueryParams.toString()}`
+      : null,
+    fetcher,
+    { refreshInterval: 15000 }
   )
 
   const isMaster = adminGuildsData?.isMaster === true
@@ -330,7 +354,37 @@ export default function ModerationPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <SyrupRxGeneralTab guildId={selectedGuildId} />
+            <Tabs value={activeTab} onValueChange={(val) => { setActiveTab(val); setAuditPage(1) }}>
+              <TabsList className="mb-4">
+                <TabsTrigger value="server" className="gap-2">
+                  <Server className="h-4 w-4" />
+                  Server
+                </TabsTrigger>
+                <TabsTrigger value="audit" className="gap-2">
+                  <ScrollText className="h-4 w-4" />
+                  Audit Log
+                </TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="server">
+                <SyrupRxGeneralTab guildId={selectedGuildId} />
+              </TabsContent>
+
+              <TabsContent value="audit">
+                <AuditLogTab
+                  logs={auditData?.logs || []}
+                  total={auditData?.total || 0}
+                  page={auditPage}
+                  totalPages={auditData?.totalPages || 0}
+                  isLoading={auditLoading}
+                  category={auditCategory}
+                  search={auditSearch}
+                  onPageChange={setAuditPage}
+                  onCategoryChange={(cat) => { setAuditCategory(cat); setAuditPage(1) }}
+                  onSearchChange={setAuditSearch}
+                />
+              </TabsContent>
+            </Tabs>
           </CardContent>
         </Card>
       ) : !selectedGuildId && accessibleGuilds.length > 0 ? (
@@ -346,6 +400,260 @@ export default function ModerationPage() {
           </CardContent>
         </Card>
       ) : null}
+    </div>
+  )
+}
+
+// Audit Log Tab Component
+const ACTION_ICONS: Record<string, typeof Clock> = {
+  kick: UserX,
+  ban: Ban,
+  unban: Ban,
+  announce: Megaphone,
+  settings: Settings,
+  banner: Settings,
+  shutdown: Power,
+  config_update: Settings,
+}
+
+const ACTION_COLORS: Record<string, string> = {
+  kick: "text-amber-500",
+  ban: "text-destructive",
+  unban: "text-green-500",
+  announce: "text-blue-500",
+  settings: "text-muted-foreground",
+  banner: "text-muted-foreground",
+  shutdown: "text-destructive",
+  config_update: "text-primary",
+}
+
+const CATEGORY_LABELS: Record<string, string> = {
+  all: "All",
+  moderation: "Moderation",
+  server: "Server",
+  config: "Config",
+  system: "System",
+}
+
+interface AuditLogEntry {
+  _id: string
+  botId: string
+  guildId: string
+  action: string
+  category: string
+  details: Record<string, unknown>
+  executedBy: { id: string; username: string; avatar?: string }
+  targetUser?: { id: string | number; name?: string }
+  success: boolean
+  error?: string
+  timestamp: string
+}
+
+function AuditLogTab({
+  logs,
+  total,
+  page,
+  totalPages,
+  isLoading,
+  category,
+  search,
+  onPageChange,
+  onCategoryChange,
+  onSearchChange,
+}: {
+  logs: AuditLogEntry[]
+  total: number
+  page: number
+  totalPages: number
+  isLoading: boolean
+  category: string
+  search: string
+  onPageChange: (p: number) => void
+  onCategoryChange: (c: string) => void
+  onSearchChange: (s: string) => void
+}) {
+  function formatTimestamp(ts: string) {
+    const date = new Date(ts)
+    const now = new Date()
+    const diffMs = now.getTime() - date.getTime()
+    const diffMin = Math.floor(diffMs / 60000)
+    const diffHr = Math.floor(diffMs / 3600000)
+    const diffDay = Math.floor(diffMs / 86400000)
+
+    if (diffMin < 1) return "Just now"
+    if (diffMin < 60) return `${diffMin}m ago`
+    if (diffHr < 24) return `${diffHr}h ago`
+    if (diffDay < 7) return `${diffDay}d ago`
+    return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+  }
+
+  function formatAction(action: string) {
+    return action
+      .replace(/_/g, " ")
+      .replace(/\b\w/g, (c) => c.toUpperCase())
+  }
+
+  function getActionDescription(entry: AuditLogEntry) {
+    const { action, details, targetUser } = entry
+    switch (action) {
+      case "kick":
+        return `Kicked ${targetUser?.name || "a user"}${details.reason ? ` - ${details.reason}` : ""}`
+      case "ban":
+        return `Banned ${targetUser?.name || "a user"}`
+      case "unban":
+        return `Unbanned ${targetUser?.name || "a user"}`
+      case "announce":
+        return `Sent announcement: "${String(details.message || "").slice(0, 80)}${String(details.message || "").length > 80 ? "..." : ""}"`
+      case "shutdown":
+        return "Shut down the server"
+      case "settings":
+        return `Updated server settings`
+      case "banner":
+        return `Set banner text`
+      case "config_update": {
+        const fields = (details.changedFields as string[]) || []
+        if (fields.length === 0) return "Updated configuration"
+        if (fields.length <= 3) return `Updated config: ${fields.join(", ")}`
+        return `Updated ${fields.length} config fields`
+      }
+      default:
+        return formatAction(action)
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Filters */}
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="relative flex-1 min-w-[200px]">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Search logs..."
+            value={search}
+            onChange={(e) => onSearchChange(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+        <Select value={category} onValueChange={onCategoryChange}>
+          <SelectTrigger className="w-[160px]">
+            <div className="flex items-center gap-2">
+              <Filter className="h-4 w-4" />
+              <SelectValue />
+            </div>
+          </SelectTrigger>
+          <SelectContent>
+            {Object.entries(CATEGORY_LABELS).map(([value, label]) => (
+              <SelectItem key={value} value={value}>
+                {label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Badge variant="secondary" className="text-xs">
+          {total.toLocaleString()} total entries
+        </Badge>
+      </div>
+
+      {/* Log Entries */}
+      {isLoading ? (
+        <div className="space-y-3">
+          {[...Array(5)].map((_, i) => (
+            <Skeleton key={i} className="h-16 rounded-lg" />
+          ))}
+        </div>
+      ) : logs.length === 0 ? (
+        <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed p-12 text-center">
+          <ScrollText className="h-10 w-10 text-muted-foreground" />
+          <div>
+            <p className="font-medium">No audit logs yet</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Actions executed on this server will appear here.
+            </p>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {logs.map((entry) => {
+            const IconComponent = ACTION_ICONS[entry.action] || Clock
+            const colorClass = ACTION_COLORS[entry.action] || "text-muted-foreground"
+            return (
+              <div
+                key={entry._id}
+                className="flex items-start gap-3 rounded-lg border p-3 transition-colors hover:bg-secondary/30"
+              >
+                <div className={`mt-0.5 shrink-0 ${colorClass}`}>
+                  <IconComponent className="h-4 w-4" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-medium text-sm">
+                      {formatAction(entry.action)}
+                    </span>
+                    <Badge variant="outline" className="text-xs">
+                      {entry.category}
+                    </Badge>
+                    {!entry.success && (
+                      <Badge variant="destructive" className="text-xs">
+                        Failed
+                      </Badge>
+                    )}
+                  </div>
+                  <p className="mt-0.5 text-sm text-muted-foreground truncate">
+                    {getActionDescription(entry)}
+                  </p>
+                  <div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
+                    <span className="flex items-center gap-1">
+                      {entry.executedBy.avatar ? (
+                        <Image
+                          src={`https://cdn.discordapp.com/avatars/${entry.executedBy.id}/${entry.executedBy.avatar}.png`}
+                          alt=""
+                          width={14}
+                          height={14}
+                          className="rounded-full"
+                        />
+                      ) : null}
+                      {entry.executedBy.username}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <Clock className="h-3 w-3" />
+                      {formatTimestamp(entry.timestamp)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between pt-2 text-sm">
+          <span className="text-muted-foreground">
+            Page {page} of {totalPages}
+          </span>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => onPageChange(Math.max(1, page - 1))}
+              disabled={page === 1}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => onPageChange(Math.min(totalPages, page + 1))}
+              disabled={page === totalPages}
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
