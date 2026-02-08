@@ -8,6 +8,188 @@ export const dynamic = "force-dynamic"
 
 const DISCORD_API_BASE = "https://discord.com/api/v10"
 
+import type { Db } from "mongodb"
+
+/**
+ * Non-blocking auto-sync: fetches new Discord messages from the webhook channel
+ * and inserts parsed log entries into webhook_logs.
+ * Debounced to at most once every 5 seconds per guild.
+ */
+async function autoSyncWebhookLogs(db: Db, botId: BotId, guildId: string) {
+  const webhookConfig = await db.collection("webhooks").findOne({ guildId })
+  if (!webhookConfig || webhookConfig.enabled === false || !webhookConfig.channelId) return
+
+  const lastSync = webhookConfig.lastSyncedAt ? new Date(webhookConfig.lastSyncedAt).getTime() : 0
+  if (Date.now() - lastSync <= 5000) return // debounce
+
+  const botToken = BOT_TOKENS[botId]
+  if (!botToken) return
+
+  const channelId = webhookConfig.channelId
+  const lastMessageId = webhookConfig.lastMessageId
+
+  let fetchUrl = `${DISCORD_API_BASE}/channels/${channelId}/messages?limit=25`
+  if (lastMessageId) fetchUrl += `&after=${lastMessageId}`
+
+  const messagesRes = await fetch(fetchUrl, {
+    headers: { Authorization: `Bot ${botToken}` },
+  }).catch(() => null)
+
+  if (!messagesRes || !messagesRes.ok) return
+
+  const messages = await messagesRes.json()
+  if (!Array.isArray(messages) || messages.length === 0) {
+    // No new messages, just update sync time
+    await db.collection("webhooks").updateOne(
+      { guildId },
+      { $set: { lastSyncedAt: new Date().toISOString() } }
+    )
+    return
+  }
+
+  // Sort oldest first
+  messages.sort(
+    (a: { timestamp: string }, b: { timestamp: string }) =>
+      new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+  )
+
+  const webhookMessages = messages.filter(
+    (msg: { webhook_id?: string; embeds?: unknown[] }) =>
+      msg.webhook_id && msg.embeds && msg.embeds.length > 0
+  )
+
+  // Batch-check for existing messageIds to avoid N+1 queries
+  const messageIds = webhookMessages.map((m: { id: string }) => m.id)
+  const existingDocs = await db
+    .collection("webhook_logs")
+    .find({ discordMessageId: { $in: messageIds }, guildId })
+    .project({ discordMessageId: 1 })
+    .toArray()
+  const existingIds = new Set(existingDocs.map((d) => d.discordMessageId))
+
+  const logEntries: Record<string, unknown>[] = []
+
+  for (const msg of webhookMessages) {
+    if (existingIds.has(msg.id)) continue
+
+    for (const embed of msg.embeds) {
+      const title = embed.title || "Unknown"
+      const description = embed.description || ""
+      const footer = embed.footer?.text || ""
+      const titleLower = title.toLowerCase()
+
+      let type = "command"
+      if (titleLower.includes("ban") || titleLower.includes("kick") || titleLower.includes("mute") || titleLower.includes("warn")) type = "moderation"
+      else if (titleLower.includes("admin")) type = "admin"
+      else if (titleLower.includes("system") || titleLower.includes("server")) type = "system"
+
+      let player: string | null = null
+      let playerId: string | null = null
+      let playerProfileUrl: string | null = null
+      let command: string | null = null
+      let message: string | null = description || null
+      let server: string | null = null
+      let target: string | null = null
+      let targetId: string | null = null
+      let targetProfileUrl: string | null = null
+
+      const linkedCmdMatch = description.match(
+        /^\[([^\]]+?):(\d+)\]\((https?:\/\/[^\)]+)\)\s+ran the command:\s*(.+)/s
+      )
+      const plainCmdMatch = description.match(
+        /^([^\[\]]+?):(\d+)\s+ran the command:\s*(.+)/s
+      )
+
+      if (linkedCmdMatch) {
+        player = linkedCmdMatch[1].trim()
+        playerId = linkedCmdMatch[2].trim()
+        playerProfileUrl = linkedCmdMatch[3].trim()
+        const fullCmd = linkedCmdMatch[4].trim()
+        const cmdParts = fullCmd.match(/^(:\S+)\s*(.*)/s)
+        command = cmdParts ? cmdParts[1] : fullCmd
+        message = cmdParts ? (cmdParts[2] || null) : null
+      } else if (plainCmdMatch) {
+        player = plainCmdMatch[1].trim()
+        playerId = plainCmdMatch[2].trim()
+        playerProfileUrl = `https://www.roblox.com/users/${playerId}/profile`
+        const fullCmd = plainCmdMatch[3].trim()
+        const cmdParts = fullCmd.match(/^(:\S+)\s*(.*)/s)
+        command = cmdParts ? cmdParts[1] : fullCmd
+        message = cmdParts ? (cmdParts[2] || null) : null
+      } else {
+        const linkedGeneric = description.match(/^\[([^\]]+?):(\d+)\]\((https?:\/\/[^\)]+)\)\s+(.+)/s)
+        const plainGeneric = description.match(/^([^\[\]]+?):(\d+)\s+(.+)/s)
+        if (linkedGeneric) {
+          player = linkedGeneric[1].trim()
+          playerId = linkedGeneric[2].trim()
+          playerProfileUrl = linkedGeneric[3].trim()
+          message = linkedGeneric[4].trim()
+        } else if (plainGeneric) {
+          player = plainGeneric[1].trim()
+          playerId = plainGeneric[2].trim()
+          playerProfileUrl = `https://www.roblox.com/users/${playerId}/profile`
+          message = plainGeneric[3].trim()
+        }
+      }
+
+      if (footer) {
+        const serverMatch = footer.match(/(?:Custom )?Server:\s*(.+)/i)
+        server = serverMatch ? serverMatch[1].trim() : footer
+      }
+
+      if (embed.fields) {
+        for (const field of embed.fields) {
+          const name = (field.name || "").toLowerCase()
+          if (name.includes("target")) {
+            const tl = field.value.match(/^\[([^\]]+?):(\d+)\]\((https?:\/\/[^\)]+)\)/)
+            const tp = field.value.match(/^(.+?):(\d+)/)
+            if (tl) { target = tl[1].trim(); targetId = tl[2].trim(); targetProfileUrl = tl[3].trim() }
+            else if (tp) { target = tp[1].trim(); targetId = tp[2].trim(); targetProfileUrl = `https://www.roblox.com/users/${targetId}/profile` }
+            else target = field.value
+          }
+        }
+      }
+
+      logEntries.push({
+        guildId,
+        channelId,
+        discordMessageId: msg.id,
+        discordTimestamp: msg.timestamp,
+        type,
+        title,
+        action: command || title,
+        player,
+        playerId,
+        playerProfileUrl,
+        target,
+        targetId,
+        targetProfileUrl,
+        command,
+        message,
+        server,
+        embedColor: embed.color || null,
+        timestamp: msg.timestamp,
+      })
+    }
+  }
+
+  if (logEntries.length > 0) {
+    await db.collection("webhook_logs").insertMany(logEntries)
+  }
+
+  const newestMessageId = messages[messages.length - 1].id
+  await db.collection("webhooks").updateOne(
+    { guildId },
+    {
+      $set: {
+        lastMessageId: newestMessageId,
+        lastSyncedAt: new Date().toISOString(),
+      },
+      $inc: { totalLogs: logEntries.length },
+    },
+  )
+}
+
 // Verify user has permission to view audit logs for this guild
 async function verifyPermission(botId: string, guildId: string): Promise<boolean> {
   const cookieStore = await cookies()
@@ -178,183 +360,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ botI
       )
     }
 
-    // ---- Auto-sync webhook logs from Discord (lightweight, debounced) ----
-    // Only sync if a webhook channel is configured, and at most once every 5 seconds per guild
-    try {
-      const webhookConfig = await db.collection("webhooks").findOne({ guildId })
-      if (webhookConfig && webhookConfig.enabled !== false && webhookConfig.channelId) {
-        const lastSync = webhookConfig.lastSyncedAt ? new Date(webhookConfig.lastSyncedAt).getTime() : 0
-        const now = Date.now()
-        // Only auto-sync every 5 seconds to avoid hammering Discord API
-        if (now - lastSync > 5000) {
-          const botToken = BOT_TOKENS[botId as BotId]
-          if (botToken) {
-            const channelId = webhookConfig.channelId
-            const lastMessageId = webhookConfig.lastMessageId
-
-            let fetchUrl = `https://discord.com/api/v10/channels/${channelId}/messages?limit=25`
-            if (lastMessageId) {
-              fetchUrl += `&after=${lastMessageId}`
-            }
-
-            const messagesRes = await fetch(fetchUrl, {
-              headers: { Authorization: `Bot ${botToken}` },
-            }).catch(() => null)
-
-            if (messagesRes && messagesRes.ok) {
-              const messages = await messagesRes.json()
-              if (Array.isArray(messages) && messages.length > 0) {
-                // Sort oldest first
-                messages.sort((a: { timestamp: string }, b: { timestamp: string }) =>
-                  new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-                )
-
-                const webhookMessages = messages.filter(
-                  (msg: { webhook_id?: string; embeds?: unknown[] }) =>
-                    msg.webhook_id && msg.embeds && msg.embeds.length > 0
-                )
-
-                const logEntries: Record<string, unknown>[] = []
-                for (const msg of webhookMessages) {
-                  // Quick dupe check
-                  const exists = await db.collection("webhook_logs").findOne({
-                    discordMessageId: msg.id,
-                    guildId,
-                  })
-                  if (exists) continue
-
-                  for (const embed of msg.embeds) {
-                    const title = embed.title || "Unknown"
-                    const description = embed.description || ""
-                    const footer = embed.footer?.text || ""
-                    const titleLower = title.toLowerCase()
-
-                    let type = "command"
-                    if (titleLower.includes("ban") || titleLower.includes("kick") || titleLower.includes("mute") || titleLower.includes("warn")) type = "moderation"
-                    else if (titleLower.includes("admin")) type = "admin"
-                    else if (titleLower.includes("system") || titleLower.includes("server")) type = "system"
-
-                    let player: string | null = null
-                    let playerId: string | null = null
-                    let playerProfileUrl: string | null = null
-                    let command: string | null = null
-                    let message: string | null = description || null
-                    let server: string | null = null
-                    let target: string | null = null
-                    let targetId: string | null = null
-                    let targetProfileUrl: string | null = null
-
-                    const linkedCmdMatch = description.match(
-                      /^\[([^\]]+?):(\d+)\]\((https?:\/\/[^\)]+)\)\s+ran the command:\s*(.+)/s
-                    )
-                    const plainCmdMatch = description.match(
-                      /^([^\[\]]+?):(\d+)\s+ran the command:\s*(.+)/s
-                    )
-
-                    if (linkedCmdMatch) {
-                      player = linkedCmdMatch[1].trim()
-                      playerId = linkedCmdMatch[2].trim()
-                      playerProfileUrl = linkedCmdMatch[3].trim()
-                      const fullCmd = linkedCmdMatch[4].trim()
-                      const cmdParts = fullCmd.match(/^(:\S+)\s*(.*)/s)
-                      command = cmdParts ? cmdParts[1] : fullCmd
-                      message = cmdParts ? (cmdParts[2] || null) : null
-                    } else if (plainCmdMatch) {
-                      player = plainCmdMatch[1].trim()
-                      playerId = plainCmdMatch[2].trim()
-                      playerProfileUrl = `https://www.roblox.com/users/${playerId}/profile`
-                      const fullCmd = plainCmdMatch[3].trim()
-                      const cmdParts = fullCmd.match(/^(:\S+)\s*(.*)/s)
-                      command = cmdParts ? cmdParts[1] : fullCmd
-                      message = cmdParts ? (cmdParts[2] || null) : null
-                    } else {
-                      const linkedGeneric = description.match(/^\[([^\]]+?):(\d+)\]\((https?:\/\/[^\)]+)\)\s+(.+)/s)
-                      const plainGeneric = description.match(/^([^\[\]]+?):(\d+)\s+(.+)/s)
-                      if (linkedGeneric) {
-                        player = linkedGeneric[1].trim()
-                        playerId = linkedGeneric[2].trim()
-                        playerProfileUrl = linkedGeneric[3].trim()
-                        message = linkedGeneric[4].trim()
-                      } else if (plainGeneric) {
-                        player = plainGeneric[1].trim()
-                        playerId = plainGeneric[2].trim()
-                        playerProfileUrl = `https://www.roblox.com/users/${playerId}/profile`
-                        message = plainGeneric[3].trim()
-                      }
-                    }
-
-                    if (footer) {
-                      const serverMatch = footer.match(/(?:Custom )?Server:\s*(.+)/i)
-                      server = serverMatch ? serverMatch[1].trim() : footer
-                    }
-
-                    // Parse target from embed fields
-                    if (embed.fields) {
-                      for (const field of embed.fields) {
-                        const name = (field.name || "").toLowerCase()
-                        if (name.includes("target")) {
-                          const tl = field.value.match(/^\[([^\]]+?):(\d+)\]\((https?:\/\/[^\)]+)\)/)
-                          const tp = field.value.match(/^(.+?):(\d+)/)
-                          if (tl) { target = tl[1].trim(); targetId = tl[2].trim(); targetProfileUrl = tl[3].trim() }
-                          else if (tp) { target = tp[1].trim(); targetId = tp[2].trim(); targetProfileUrl = `https://www.roblox.com/users/${targetId}/profile` }
-                          else target = field.value
-                        }
-                      }
-                    }
-
-                    logEntries.push({
-                      guildId,
-                      channelId,
-                      discordMessageId: msg.id,
-                      discordTimestamp: msg.timestamp,
-                      type,
-                      title,
-                      action: command || title,
-                      player,
-                      playerId,
-                      playerProfileUrl,
-                      target,
-                      targetId,
-                      targetProfileUrl,
-                      command,
-                      message,
-                      server,
-                      embedColor: embed.color || null,
-                      timestamp: msg.timestamp,
-                    })
-                  }
-                }
-
-                if (logEntries.length > 0) {
-                  await db.collection("webhook_logs").insertMany(logEntries)
-                }
-
-                const newestMessageId = messages[messages.length - 1].id
-                await db.collection("webhooks").updateOne(
-                  { guildId },
-                  {
-                    $set: {
-                      lastMessageId: newestMessageId,
-                      lastSyncedAt: new Date().toISOString(),
-                    },
-                    $inc: { totalLogs: logEntries.length },
-                  }
-                )
-              } else {
-                // No new messages, just update sync time
-                await db.collection("webhooks").updateOne(
-                  { guildId },
-                  { $set: { lastSyncedAt: new Date().toISOString() } }
-                )
-              }
-            }
-          }
-        }
-      }
-    } catch (syncErr) {
-      // Auto-sync is best-effort; don't fail the audit log request
-      console.error("Auto-sync error (non-fatal):", syncErr)
-    }
+    // ---- Fire-and-forget auto-sync of webhook logs from Discord ----
+    // Non-blocking: kicks off in the background so the audit log response is fast.
+    // Debounced to at most once every 5 seconds per guild.
+    autoSyncWebhookLogs(db, botId as BotId, guildId).catch((err) =>
+      console.error("Auto-sync error (non-fatal):", err)
+    )
 
     // ---- Fetch from both collections and merge ----
 
