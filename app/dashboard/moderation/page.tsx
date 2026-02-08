@@ -75,7 +75,7 @@ export default function ModerationPage() {
   const { data: auditData, isLoading: auditLoading, mutate: refreshAuditLogs } = useSWR(
     auditSWRKey,
     fetcher,
-    { refreshInterval: activeTab === "audit" ? 500 : 0 }
+    { refreshInterval: activeTab === "audit" ? 3000 : 0 }
   )
 
   const isMaster = adminGuildsData?.isMaster === true
