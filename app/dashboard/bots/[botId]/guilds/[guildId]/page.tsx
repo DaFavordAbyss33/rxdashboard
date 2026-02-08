@@ -50,10 +50,12 @@ import {
   Clock,
   Info,
   Lock,
+  Webhook,
 } from "lucide-react"
 import { hasManageGuildPermission } from "@/lib/data"
 import { toast } from "sonner"
 import { SyrupRxGeneralTab } from "@/components/syruprx/general-tab"
+import { WebhookTab } from "@/components/syruprx/webhook-tab"
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json())
 
@@ -233,6 +235,14 @@ export default function GuildConfigPage({ params }: GuildConfigPageProps) {
         label: "Log channel configured",
         done: !!config.staffLogs || !!config.modLogs || !!config.logChannelId,
       },
+      ...(isSyrupRx
+        ? [
+            {
+              label: "Webhook configured",
+              done: false, // Will be checked via webhook API - displayed as pending by default
+            },
+          ]
+        : []),
       {
         label: "API keys set",
         done: bot.capabilities.keys?.some((key) => !!config[key]) ?? true,
@@ -408,6 +418,21 @@ export default function GuildConfigPage({ params }: GuildConfigPageProps) {
                 >
                   <Wrench className="mr-2 h-4 w-4" />
                   Setup
+                  {!canAccessSetup && <Lock className="ml-2 h-3 w-3" />}
+                </TabsTrigger>
+              )}
+              {botId === "syruprx" && (
+                <TabsTrigger
+                  value="webhooks"
+                  disabled={!canAccessSetup}
+                  className={cn(
+                    "rounded-none border-b-2 border-transparent px-4 py-3 data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none",
+                    !canAccessSetup && "opacity-50 cursor-not-allowed"
+                  )}
+                  title={!canAccessSetup ? "Requires server owner or Owner Privilege role" : undefined}
+                >
+                  <Webhook className="mr-2 h-4 w-4" />
+                  Webhooks
                   {!canAccessSetup && <Lock className="ml-2 h-3 w-3" />}
                 </TabsTrigger>
               )}
@@ -807,6 +832,23 @@ export default function GuildConfigPage({ params }: GuildConfigPageProps) {
                   <h3 className="text-lg font-semibold text-card-foreground">Access Restricted</h3>
                   <p className="mt-2 text-sm text-muted-foreground max-w-md">
                     You need to be the server owner or have an Owner Privilege role to access this section. Admin roles do not grant access to Setup.
+                  </p>
+                </div>
+              )}
+            </TabsContent>
+          )}
+
+          {/* Webhooks Tab (SyrupRx specific) */}
+          {botId === "syruprx" && (
+            <TabsContent value="webhooks" className="p-6">
+              {canAccessSetup ? (
+                <WebhookTab guildId={guildId} />
+              ) : (
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                  <Lock className="h-12 w-12 text-muted-foreground mb-4" />
+                  <h3 className="text-lg font-semibold text-card-foreground">Access Restricted</h3>
+                  <p className="mt-2 text-sm text-muted-foreground max-w-md">
+                    You need to be the server owner or have an Owner Privilege role to manage webhooks.
                   </p>
                 </div>
               )}
