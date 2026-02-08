@@ -3,7 +3,10 @@ import { getAllBotsStatus, type BotId } from "@/lib/discord"
 import { getGuildStats, getSubscriptionStats, BOT_DATABASES } from "@/lib/mongodb"
 import Stripe from "stripe"
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!)
+// Only initialize Stripe if the key is actually set
+const stripe = process.env.STRIPE_SECRET_KEY
+  ? new Stripe(process.env.STRIPE_SECRET_KEY)
+  : null
 
 // Bot metadata that doesn't come from APIs
 const BOT_METADATA: Record<BotId, {
@@ -104,13 +107,14 @@ const BOT_METADATA: Record<BotId, {
 
 export async function GET() {
   try {
-    // Fetch all bot statuses from Discord API
-    const discordStatuses = await getAllBotsStatus()
-    
-    // Fetch MongoDB stats and Stripe subscriptions in parallel
     const botIds = Object.keys(BOT_DATABASES) as BotId[]
-    
-    const [mongoStats, stripeSubscriptions] = await Promise.all([
+
+    // Fetch all sources in parallel -- each wrapped so one failure doesn't break everything
+    const [discordStatuses, mongoStats, stripeSubscriptions] = await Promise.all([
+      getAllBotsStatus().catch((err) => {
+        console.error("[bots] Discord status fetch failed:", err)
+        return [] as Awaited<ReturnType<typeof getAllBotsStatus>>
+      }),
       Promise.all(botIds.map(async (botId) => {
         const [guildStats, subStats] = await Promise.all([
           getGuildStats(botId),
@@ -118,7 +122,12 @@ export async function GET() {
         ])
         return { botId, guildStats, subStats }
       })),
-      stripe.subscriptions.list({ status: "all", limit: 100 }),
+      stripe
+        ? stripe.subscriptions.list({ status: "all", limit: 100 }).catch((err) => {
+            console.error("[bots] Stripe subscriptions fetch failed:", err)
+            return { data: [] } as Stripe.Response<Stripe.ApiList<Stripe.Subscription>>
+          })
+        : Promise.resolve({ data: [] } as unknown as Stripe.Response<Stripe.ApiList<Stripe.Subscription>>),
     ])
 
     // Build combined bot data
