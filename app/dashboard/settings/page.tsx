@@ -8,7 +8,11 @@ import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Separator } from "@/components/ui/separator"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { User, Bell, Shield, LogOut, CreditCard, ChevronRight } from "lucide-react"
+import { User, Bell, Shield, LogOut, CreditCard, ChevronRight, Award } from "lucide-react"
+import { TierBadge, TierLegend, getTierFromDate } from "@/components/dashboard/tier-badge"
+
+// Demo join date - in production, pull from user session/database
+const DEMO_JOIN_DATE = "2025-06-15T10:30:00Z"
 
 export default function SettingsPage() {
   const { user, logout } = useAuth()
@@ -18,6 +22,8 @@ export default function SettingsPage() {
     : undefined
 
   const initials = user?.username?.slice(0, 2).toUpperCase() ?? "??"
+
+  const userTier = getTierFromDate(DEMO_JOIN_DATE)
 
   return (
     <div className="space-y-6">
@@ -44,15 +50,31 @@ export default function SettingsPage() {
             </AvatarFallback>
           </Avatar>
           <div>
-            <h3 className="text-lg font-semibold text-card-foreground">
-              {user?.username}
-            </h3>
+            <div className="flex items-center gap-2">
+              <h3 className="text-lg font-semibold text-card-foreground">
+                {user?.username}
+              </h3>
+              <TierBadge tier={userTier} showLabel size="sm" />
+            </div>
             <p className="text-sm text-muted-foreground">{user?.email}</p>
             <p className="mt-1 text-xs text-muted-foreground">
               Discord ID: {user?.id}
             </p>
           </div>
         </div>
+      </div>
+
+      {/* Membership Tier Section */}
+      <div className="rounded-lg border border-border bg-card p-6">
+        <div className="flex items-center gap-2 text-lg font-semibold text-card-foreground">
+          <Award className="h-5 w-5" />
+          Membership Tier
+        </div>
+        <Separator className="my-4" />
+        <p className="mb-4 text-sm text-muted-foreground">
+          Your tier is based on how long you have been using Rx Systems. Higher tiers unlock recognition and future perks.
+        </p>
+        <TierLegend currentTier={userTier} />
       </div>
 
       {/* Notifications Section */}
@@ -65,9 +87,27 @@ export default function SettingsPage() {
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <Label className="text-sm font-medium">New Bot Added</Label>
+              <Label className="text-sm font-medium">Config Changes</Label>
               <p className="text-sm text-muted-foreground">
-                Get notified when a new bot is added to the dashboard
+                Get notified when bot configurations are updated
+              </p>
+            </div>
+            <Switch defaultChecked />
+          </div>
+          <div className="flex items-center justify-between">
+            <div>
+              <Label className="text-sm font-medium">Website Changes</Label>
+              <p className="text-sm text-muted-foreground">
+                Get notified about dashboard updates, new features, and releases
+              </p>
+            </div>
+            <Switch defaultChecked />
+          </div>
+          <div className="flex items-center justify-between">
+            <div>
+              <Label className="text-sm font-medium">Bot Updates</Label>
+              <p className="text-sm text-muted-foreground">
+                Get notified when bots are updated or new bots are added
               </p>
             </div>
             <Switch defaultChecked />
@@ -77,6 +117,24 @@ export default function SettingsPage() {
               <Label className="text-sm font-medium">Bot Downtime Alerts</Label>
               <p className="text-sm text-muted-foreground">
                 Get notified when a bot goes offline or experiences issues
+              </p>
+            </div>
+            <Switch defaultChecked />
+          </div>
+          <div className="flex items-center justify-between">
+            <div>
+              <Label className="text-sm font-medium">Subscription Updates</Label>
+              <p className="text-sm text-muted-foreground">
+                Get notified about subscription activations, renewals, and expirations
+              </p>
+            </div>
+            <Switch defaultChecked />
+          </div>
+          <div className="flex items-center justify-between">
+            <div>
+              <Label className="text-sm font-medium">Security Alerts</Label>
+              <p className="text-sm text-muted-foreground">
+                Get notified about new logins and security-related events
               </p>
             </div>
             <Switch defaultChecked />

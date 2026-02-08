@@ -6,6 +6,10 @@ import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { LayoutDashboard, Settings, AlertTriangle, Server, Bot, Crown, Shield, Gavel } from "lucide-react"
 import { useAuth } from "@/lib/auth-context"
+import { TierCard, getTierFromDate } from "@/components/dashboard/tier-badge"
+
+// Demo join date - in production, pull from user session/database
+const DEMO_JOIN_DATE = "2025-06-15T10:30:00Z"
 
 const navItems = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard, adminOnly: true },
@@ -21,6 +25,8 @@ const navItems = [
 export function DashboardSidebar() {
   const pathname = usePathname()
   const { isAdmin } = useAuth()
+
+  const userTier = getTierFromDate(DEMO_JOIN_DATE)
 
   return (
     <aside className="flex w-64 flex-col border-r border-border bg-sidebar">
@@ -63,6 +69,11 @@ export function DashboardSidebar() {
           )
         })}
       </nav>
+
+      {/* Tier Card */}
+      <div className="px-4 pb-3">
+        <TierCard tier={userTier} joinDate={DEMO_JOIN_DATE} />
+      </div>
 
       {/* Footer */}
       <div className="border-t border-sidebar-border p-4">
