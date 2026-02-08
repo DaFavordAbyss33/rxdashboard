@@ -47,6 +47,7 @@ const fetcher = (url: string) => fetch(url).then((res) => res.json())
 
 interface SyrupRxGeneralTabProps {
   guildId: string
+  onActionExecuted?: () => void
 }
 
 interface ServerInfo {
@@ -67,7 +68,7 @@ interface Player {
   displayName?: string
 }
 
-export function SyrupRxGeneralTab({ guildId }: SyrupRxGeneralTabProps) {
+export function SyrupRxGeneralTab({ guildId, onActionExecuted }: SyrupRxGeneralTabProps) {
   // Server data fetching
   const { data: serverInfoData, isLoading: serverInfoLoading, mutate: refreshServerInfo } = useSWR(
     `/api/bots/syruprx/marizma?guildId=${guildId}&action=serverinfo`,
@@ -189,6 +190,9 @@ export function SyrupRxGeneralTab({ guildId }: SyrupRxGeneralTabProps) {
         } else if (action === "settings" || action === "banner") {
           refreshServerInfo()
         }
+
+        // Immediately refresh audit logs
+        onActionExecuted?.()
         
         // Clear forms
         if (action === "announce") setAnnounceMessage("")
