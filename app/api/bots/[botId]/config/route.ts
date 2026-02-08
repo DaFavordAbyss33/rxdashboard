@@ -3,6 +3,7 @@ import { cookies } from "next/headers"
 import { getBotDatabase, isBotConfigured, type BotId } from "@/lib/mongodb"
 import { BOT_TOKENS } from "@/lib/discord"
 import { isMasterUser } from "@/lib/admin"
+import { writeAuditLog } from "@/lib/audit-log"
 
 export const dynamic = "force-dynamic"
 
@@ -313,6 +314,43 @@ export async function POST(
       },
       { upsert: true }
     )
+
+    // Write audit log for config change
+    const cookieStore = await cookies()
+    const sessionCookie = cookieStore.get("discord_session")
+    if (sessionCookie) {
+      try {
+        const session = JSON.parse(sessionCookie.value)
+        const sessionUser = session.user
+        if (sessionUser) {
+          // Determine what changed (compare keys)
+          const changedKeys = Object.keys(mergedConfig).filter((key) => {
+            const oldVal = JSON.stringify(existingConfig[key] ?? "")
+            const newVal = JSON.stringify(mergedConfig[key] ?? "")
+            return oldVal !== newVal
+          })
+
+          writeAuditLog(botId as BotId, {
+            botId,
+            guildId,
+            action: "config_update",
+            category: "config",
+            details: {
+              changedFields: changedKeys,
+              fieldCount: changedKeys.length,
+            },
+            executedBy: {
+              id: sessionUser.id,
+              username: sessionUser.username,
+              avatar: sessionUser.avatar,
+            },
+            success: true,
+          }).catch(() => {})
+        }
+      } catch {
+        // Non-blocking
+      }
+    }
 
     // Return masked config
     const maskedConfig = maskSecrets(mergedConfig)
