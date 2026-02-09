@@ -53,6 +53,7 @@ import {
   Clock,
   ImageIcon,
   MessageSquareWarning,
+  MessageCircle,
   KeyRound,
 } from "lucide-react"
 import {
@@ -160,6 +161,12 @@ export default function AdminPage() {
   const [isSendingUrgentDm, setIsSendingUrgentDm] = useState(false)
   const [urgentDmResult, setUrgentDmResult] = useState<{ type: "success" | "error"; text: string } | null>(null)
 
+  // General (Non-Urgent) DM state
+  const [generalDmMessage, setGeneralDmMessage] = useState("")
+  const [generalDmBot, setGeneralDmBot] = useState<string>("syruprx")
+  const [isSendingGeneralDm, setIsSendingGeneralDm] = useState(false)
+  const [generalDmResult, setGeneralDmResult] = useState<{ type: "success" | "error"; text: string } | null>(null)
+
   // Fetch broadcasts from Resend
   const { data: broadcastsData, isLoading: broadcastsLoading, mutate: mutateBroadcasts } = useSWR(
     "/api/admin/broadcasts",
@@ -169,6 +176,12 @@ export default function AdminPage() {
   // Fetch urgent DM history
   const { data: urgentDmHistory, isLoading: urgentDmHistoryLoading, mutate: mutateUrgentDmHistory } = useSWR(
     "/api/admin/urgent-dm",
+    fetcher
+  )
+
+  // Fetch general DM history
+  const { data: generalDmHistory, isLoading: generalDmHistoryLoading, mutate: mutateGeneralDmHistory } = useSWR(
+    "/api/admin/general-dm",
     fetcher
   )
 
@@ -342,6 +355,42 @@ export default function AdminPage() {
       setUrgentDmResult({ type: "error", text: "Network error. Please try again." })
     } finally {
       setIsSendingUrgentDm(false)
+    }
+  }
+
+  // Send general (non-urgent) DMs to guild owners
+  const handleSendGeneralDm = async () => {
+    if (!generalDmMessage.trim()) return
+
+    setIsSendingGeneralDm(true)
+    setGeneralDmResult(null)
+
+    try {
+      const response = await fetch("/api/admin/general-dm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: generalDmMessage,
+          botId: generalDmBot,
+        }),
+      })
+
+      const data = await response.json()
+
+      if (response.ok && data.success) {
+        setGeneralDmResult({ 
+          type: "success", 
+          text: `${data.message}${data.failedCount > 0 ? ` (${data.failedCount} failed)` : ""}` 
+        })
+        setGeneralDmMessage("")
+        mutateGeneralDmHistory()
+      } else {
+        setGeneralDmResult({ type: "error", text: data.error || "Failed to send DMs" })
+      }
+    } catch (error) {
+      setGeneralDmResult({ type: "error", text: "Network error. Please try again." })
+    } finally {
+      setIsSendingGeneralDm(false)
     }
   }
 
@@ -621,7 +670,7 @@ export default function AdminPage() {
       </div>
 
       <Tabs defaultValue="servers" className="w-full">
-        <TabsList className="grid w-full max-w-4xl grid-cols-6">
+        <TabsList className="grid w-full max-w-5xl grid-cols-7">
           <TabsTrigger value="servers" className="gap-2">
             <Server className="h-4 w-4" />
             Servers
@@ -645,6 +694,10 @@ export default function AdminPage() {
           <TabsTrigger value="urgent-dm" className="gap-2">
             <MessageSquareWarning className="h-4 w-4" />
             Urgent DMs
+          </TabsTrigger>
+          <TabsTrigger value="general-dm" className="gap-2">
+            <MessageCircle className="h-4 w-4" />
+            Non-Urgent
           </TabsTrigger>
         </TabsList>
 
@@ -2272,6 +2325,200 @@ export default function AdminPage() {
               ) : (
                 <div className="space-y-3">
                   {urgentDmHistory.history.map((dm: {
+                    id: string
+                    botId: string
+                    message: string
+                    sentBy: string
+                    sentAt: string
+                    successCount: number
+                    recipientCount: number
+                    failedGuilds: string[]
+                  }) => (
+                    <div key={dm.id} className="rounded-lg border border-border bg-secondary/30 p-4">
+                      <div className="flex items-start justify-between">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <Badge variant="outline" className="gap-1">
+                              <Bot className="h-3 w-3" />
+                              {BOT_NAMES[dm.botId] || dm.botId}
+                            </Badge>
+                            <span className="text-xs text-muted-foreground">
+                              by {dm.sentBy}
+                            </span>
+                          </div>
+                          <p className="text-sm text-foreground line-clamp-2">{dm.message}</p>
+                        </div>
+                        <div className="text-right text-xs text-muted-foreground">
+                          <p>{new Date(dm.sentAt).toLocaleDateString()}</p>
+                          <p>{new Date(dm.sentAt).toLocaleTimeString()}</p>
+                        </div>
+                      </div>
+                      <div className="mt-2 flex items-center gap-4 text-xs">
+                        <span className="text-green-500">
+                          {dm.successCount} sent
+                        </span>
+                        {dm.failedGuilds?.length > 0 && (
+                          <span className="text-destructive">
+                            {dm.failedGuilds.length} failed
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Non-Urgent (General) DMs Tab */}
+        <TabsContent value="general-dm" className="mt-6 space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <MessageCircle className="h-5 w-5 text-primary" />
+                Send General Notices to Guild Owners
+              </CardTitle>
+              <CardDescription>
+                Send non-urgent direct messages to all guild owners for a specific bot. Use this for general announcements, updates, and feature notices.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* Bot Selection */}
+              <div className="space-y-2">
+                <Label htmlFor="general-dm-bot">Select Bot</Label>
+                <div className="flex flex-wrap gap-2">
+                  {Object.entries(BOT_NAMES).map(([id, name]) => (
+                    <Button
+                      key={id}
+                      variant={generalDmBot === id ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setGeneralDmBot(id)}
+                      className="gap-2"
+                    >
+                      <Bot className="h-4 w-4" />
+                      {name}
+                    </Button>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  DMs will be sent to all guild owners where {BOT_NAMES[generalDmBot] || generalDmBot} is installed.
+                </p>
+              </div>
+
+              {/* Message Input */}
+              <div className="space-y-2">
+                <Label htmlFor="general-dm-message">Notice Message</Label>
+                <Textarea
+                  id="general-dm-message"
+                  placeholder="Enter your general notice message here..."
+                  value={generalDmMessage}
+                  onChange={(e) => setGeneralDmMessage(e.target.value)}
+                  rows={5}
+                  className="resize-none"
+                />
+                <p className="text-xs text-muted-foreground">
+                  This message will be sent as an embed with a general notification header. No message content outside the embed.
+                </p>
+              </div>
+
+              {/* Info Notice */}
+              <div className="rounded-lg border border-primary/50 bg-primary/10 p-4">
+                <div className="flex items-start gap-3">
+                  <MessageCircle className="mt-0.5 h-5 w-5 text-primary" />
+                  <div className="space-y-1">
+                    <p className="font-medium text-primary">General notice</p>
+                    <p className="text-sm text-muted-foreground">
+                      This will send a non-urgent DM embed to all guild owners. Use for general updates, new features, maintenance schedules, or any announcement that does not require immediate action.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Result Message */}
+              {generalDmResult && (
+                <div className={`flex items-center gap-2 rounded-lg p-3 ${
+                  generalDmResult.type === "success" 
+                    ? "bg-green-500/10 text-green-500" 
+                    : "bg-destructive/10 text-destructive"
+                }`}>
+                  {generalDmResult.type === "success" ? (
+                    <CheckCircle className="h-4 w-4" />
+                  ) : (
+                    <AlertTriangle className="h-4 w-4" />
+                  )}
+                  <span className="text-sm">{generalDmResult.text}</span>
+                </div>
+              )}
+
+              {/* Send Button */}
+              <div className="flex justify-end">
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button 
+                      variant="default" 
+                      disabled={!generalDmMessage.trim() || isSendingGeneralDm}
+                      className="gap-2"
+                    >
+                      {isSendingGeneralDm ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Send className="h-4 w-4" />
+                      )}
+                      Send General Notice
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle className="flex items-center gap-2">
+                        <MessageCircle className="h-5 w-5 text-primary" />
+                        Confirm General Notice
+                      </AlertDialogTitle>
+                      <AlertDialogDescription>
+                        You are about to send a general notice DM to all owners of servers where <strong>{BOT_NAMES[generalDmBot]}</strong> is installed. 
+                        Are you sure you want to proceed?
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={handleSendGeneralDm}
+                      >
+                        Yes, Send Notices
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* DM History */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Clock className="h-5 w-5" />
+                Recent General Notices
+              </CardTitle>
+              <CardDescription>
+                History of general notice DMs sent to guild owners.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {generalDmHistoryLoading ? (
+                <div className="space-y-3">
+                  {[...Array(3)].map((_, i) => (
+                    <Skeleton key={i} className="h-20 rounded-lg" />
+                  ))}
+                </div>
+              ) : !generalDmHistory?.history?.length ? (
+                <div className="flex flex-col items-center justify-center py-8 text-center">
+                  <MessageCircle className="h-12 w-12 text-muted-foreground/50" />
+                  <p className="mt-4 text-muted-foreground">No general notices have been sent yet.</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {generalDmHistory.history.map((dm: {
                     id: string
                     botId: string
                     message: string
