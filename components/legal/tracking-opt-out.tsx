@@ -89,8 +89,7 @@ export function TrackingOptOut() {
             bots will not access that data for you specifically. Some features may be limited as a result.
           </p>
           <p className="text-xs">
-            Note: These preferences apply to your Discord user ID across all servers using Rx Systems bots. You must be
-            logged in to save changes.
+            These preferences apply to your Discord user ID across all servers using Rx Systems bots.
           </p>
         </div>
       </div>

@@ -1,11 +1,6 @@
-"use client"
-
-import { ScrollArea } from "@/components/ui/scroll-area"
-
 export function TermsOfService() {
   return (
-    <ScrollArea className="h-[500px] pr-4">
-      <div className="space-y-6 text-sm text-muted-foreground">
+    <div className="space-y-6 text-sm text-muted-foreground">
         <div>
           <h3 className="text-lg font-semibold text-card-foreground">Terms of Service</h3>
           <p className="mt-1 text-xs">
@@ -137,6 +132,5 @@ export function TermsOfService() {
           </p>
         </section>
       </div>
-    </ScrollArea>
   )
 }
