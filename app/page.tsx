@@ -7,7 +7,11 @@ import { useRouter } from "next/navigation"
 import { useEffect } from "react"
 import Image from "next/image"
 import { Button } from "@/components/ui/button"
-import { Shield, Zap, Users } from "lucide-react"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Shield, Zap, Users, FileText, Scale, ShieldOff } from "lucide-react"
+import { PrivacyPolicy } from "@/components/legal/privacy-policy"
+import { TermsOfService } from "@/components/legal/terms-of-service"
+import { TrackingOptOut } from "@/components/legal/tracking-opt-out"
 
 export default function HomePage() {
   const { isAuthenticated, isLoading, login } = useAuth()
@@ -117,13 +121,75 @@ export default function HomePage() {
         </div>
       </main>
 
+      {/* Legal & Privacy Section */}
+      <section id="legal-section" className="border-t border-border px-6 py-16">
+        <div className="mx-auto max-w-4xl">
+          <div className="mb-8 text-center">
+            <h2 className="text-2xl font-bold tracking-tight text-foreground">
+              Legal & Privacy
+            </h2>
+            <p className="mt-2 text-muted-foreground">
+              Review our policies and manage your tracking preferences
+            </p>
+          </div>
+
+          <Tabs defaultValue="privacy" className="w-full">
+            <TabsList className="mx-auto mb-6 flex w-fit">
+              <TabsTrigger value="privacy" className="gap-2 px-4">
+                <FileText className="h-4 w-4" />
+                Privacy Policy
+              </TabsTrigger>
+              <TabsTrigger value="terms" className="gap-2 px-4">
+                <Scale className="h-4 w-4" />
+                Terms of Service
+              </TabsTrigger>
+              <TabsTrigger value="tracking" className="gap-2 px-4">
+                <ShieldOff className="h-4 w-4" />
+                Tracking Preferences
+              </TabsTrigger>
+            </TabsList>
+
+            <div className="rounded-lg border border-border bg-card p-6">
+              <TabsContent value="privacy">
+                <PrivacyPolicy />
+              </TabsContent>
+              <TabsContent value="terms">
+                <TermsOfService />
+              </TabsContent>
+              <TabsContent value="tracking">
+                <TrackingOptOut />
+              </TabsContent>
+            </div>
+          </Tabs>
+        </div>
+      </section>
+
       {/* Footer */}
       <footer className="border-t border-border px-6 py-6">
-        <div className="mx-auto max-w-6xl text-center text-sm text-muted-foreground">
+        <div className="mx-auto flex max-w-6xl flex-col items-center gap-2 text-center text-sm text-muted-foreground">
           <span className="bg-gradient-to-r from-rx-purple to-rx-orange bg-clip-text font-medium text-transparent">
             RX Systems
           </span>{" "}
           - Manage your Discord bot ecosystem
+          <div className="flex gap-4 text-xs">
+            <button
+              onClick={() => {
+                document.getElementById("legal-section")?.scrollIntoView({ behavior: "smooth" })
+              }}
+              className="hover:text-foreground transition-colors"
+            >
+              Privacy Policy
+            </button>
+            <span className="text-border">|</span>
+            <button
+              onClick={() => {
+                document.getElementById("legal-section")?.scrollIntoView({ behavior: "smooth" })
+              }}
+              className="hover:text-foreground transition-colors"
+            >
+              Terms of Service
+            </button>
+          </div>
         </div>
       </footer>
     </div>
