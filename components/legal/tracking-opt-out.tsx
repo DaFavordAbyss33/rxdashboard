@@ -1,13 +1,13 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Switch } from "@/components/ui/switch"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Eye, EyeOff, Users, MessageSquare, ShieldAlert, Info } from "lucide-react"
+import { Eye, EyeOff, Users, MessageSquare, ShieldAlert, Info, AlertCircle, Loader2 } from "lucide-react"
 
 interface TrackingPreference {
-  key: string
+  key: "presence" | "members" | "messages"
   label: string
   description: string
   detail: string
@@ -15,42 +15,74 @@ interface TrackingPreference {
   enabled: boolean
 }
 
-export function TrackingOptOut() {
-  const [preferences, setPreferences] = useState<TrackingPreference[]>([
-    {
-      key: "presence",
-      label: "Presence Intent",
-      description: "Online status and activity tracking",
-      detail:
-        "When disabled, bots will not be able to see your online/offline/idle/DND status or your current activity. Presence-aware dashboards and status-based notifications will not include your data.",
-      icon: Eye,
-      enabled: true,
-    },
-    {
-      key: "members",
-      label: "Server Members Intent",
-      description: "Member list and role tracking",
-      detail:
-        "When disabled, bots will not track your join/leave events, role changes, or nickname updates. Permission-based features may still function using cached data. Audit logging for your account will be limited.",
-      icon: Users,
-      enabled: true,
-    },
-    {
-      key: "messages",
-      label: "Message Content Intent",
-      description: "Reading message content for triggers and logging",
-      detail:
-        "When disabled, bots will not read or process the content of your messages. Keyword triggers, structured logging, and chat-based automation will not apply to your messages. Slash commands will continue to work normally.",
-      icon: MessageSquare,
-      enabled: true,
-    },
-  ])
+const DEFAULT_PREFERENCES: TrackingPreference[] = [
+  {
+    key: "presence",
+    label: "Presence Intent",
+    description: "Online status and activity tracking",
+    detail:
+      "When disabled, bots will not be able to see your online/offline/idle/DND status or your current activity. Presence-aware dashboards and status-based notifications will not include your data.",
+    icon: Eye,
+    enabled: true,
+  },
+  {
+    key: "members",
+    label: "Server Members Intent",
+    description: "Member list and role tracking",
+    detail:
+      "When disabled, bots will not track your join/leave events, role changes, or nickname updates. Permission-based features may still function using cached data. Audit logging for your account will be limited.",
+    icon: Users,
+    enabled: true,
+  },
+  {
+    key: "messages",
+    label: "Message Content Intent",
+    description: "Reading message content for triggers and logging",
+    detail:
+      "When disabled, bots will not read or process the content of your messages. Keyword triggers, structured logging, and chat-based automation will not apply to your messages. Slash commands will continue to work normally.",
+    icon: MessageSquare,
+    enabled: true,
+  },
+]
 
+export function TrackingOptOut() {
+  const [preferences, setPreferences] = useState<TrackingPreference[]>(DEFAULT_PREFERENCES)
   const [saved, setSaved] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [saveError, setSaveError] = useState<string | null>(null)
+
+  // Fetch current preferences from the API on mount
+  useEffect(() => {
+    async function fetchPreferences() {
+      try {
+        const response = await fetch("/api/user/tracking-preferences")
+        const data = await response.json()
+
+        if (data.success && data.preferences) {
+          setPreferences((prev) =>
+            prev.map((p) => ({
+              ...p,
+              enabled: data.preferences[p.key] !== false,
+            }))
+          )
+        } else if (!response.ok) {
+          setError(data.error || "Failed to load preferences")
+        }
+      } catch {
+        setError("Failed to connect to server")
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchPreferences()
+  }, [])
 
   const togglePreference = (key: string) => {
     setSaved(false)
+    setSaveError(null)
     setPreferences((prev) =>
       prev.map((p) => (p.key === key ? { ...p, enabled: !p.enabled } : p))
     )
@@ -58,24 +90,70 @@ export function TrackingOptOut() {
 
   const disableAll = () => {
     setSaved(false)
+    setSaveError(null)
     setPreferences((prev) => prev.map((p) => ({ ...p, enabled: false })))
   }
 
   const enableAll = () => {
     setSaved(false)
+    setSaveError(null)
     setPreferences((prev) => prev.map((p) => ({ ...p, enabled: true })))
   }
 
   const handleSave = async () => {
     setSaving(true)
-    // Simulate saving - in production this would call an API
-    await new Promise((resolve) => setTimeout(resolve, 800))
-    setSaved(true)
-    setSaving(false)
+    setSaveError(null)
+
+    try {
+      const body = {
+        presence: preferences.find((p) => p.key === "presence")?.enabled ?? true,
+        members: preferences.find((p) => p.key === "members")?.enabled ?? true,
+        messages: preferences.find((p) => p.key === "messages")?.enabled ?? true,
+      }
+
+      const response = await fetch("/api/user/tracking-preferences", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      })
+
+      const data = await response.json()
+
+      if (data.success) {
+        setSaved(true)
+      } else {
+        setSaveError(data.error || "Failed to save preferences")
+      }
+    } catch {
+      setSaveError("Failed to connect to server. Please try again.")
+    } finally {
+      setSaving(false)
+    }
   }
 
   const allDisabled = preferences.every((p) => !p.enabled)
   const allEnabled = preferences.every((p) => p.enabled)
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center gap-3 py-12 text-muted-foreground">
+        <Loader2 className="h-5 w-5 animate-spin" />
+        <span className="text-sm">Loading tracking preferences...</span>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="flex gap-3 rounded-lg border border-destructive/30 bg-destructive/10 p-4">
+        <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-destructive" />
+        <div className="space-y-1 text-sm">
+          <p className="font-medium text-destructive">Failed to load preferences</p>
+          <p className="text-muted-foreground">{error}</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">
@@ -159,13 +237,24 @@ export function TrackingOptOut() {
         </div>
       )}
 
+      {/* Save error */}
+      {saveError && (
+        <div className="flex gap-3 rounded-lg border border-destructive/30 bg-destructive/10 p-4">
+          <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-destructive" />
+          <div className="space-y-1 text-sm">
+            <p className="font-medium text-destructive">Save failed</p>
+            <p className="text-muted-foreground">{saveError}</p>
+          </div>
+        </div>
+      )}
+
       {/* Save button */}
       <div className="flex items-center gap-3">
         <Button onClick={handleSave} disabled={saving || saved} className="gap-2">
           {saving ? (
             <>
-              <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary-foreground border-t-transparent" />
-              Saving...
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Saving to all bot databases...
             </>
           ) : saved ? (
             "Preferences Saved"
@@ -173,7 +262,7 @@ export function TrackingOptOut() {
             "Save Preferences"
           )}
         </Button>
-        {saved && <span className="text-xs text-online">Your tracking preferences have been updated.</span>}
+        {saved && <span className="text-xs text-online">Your tracking preferences have been synced across all Rx Systems bots.</span>}
       </div>
     </div>
   )
