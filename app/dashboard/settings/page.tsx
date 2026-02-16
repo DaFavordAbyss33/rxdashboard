@@ -8,7 +8,8 @@ import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Separator } from "@/components/ui/separator"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { User, Bell, Shield, LogOut, CreditCard, ChevronRight, Award } from "lucide-react"
+import { User, Bell, Shield, LogOut, CreditCard, ChevronRight, Award, ShieldOff } from "lucide-react"
+import { TrackingOptOut } from "@/components/legal/tracking-opt-out"
 import { TierBadge, TierLegend, getTierFromDate } from "@/components/dashboard/tier-badge"
 
 // Demo join date - in production, pull from user session/database
@@ -196,6 +197,16 @@ export default function SettingsPage() {
             <Switch />
           </div>
         </div>
+      </div>
+
+      {/* Tracking Preferences */}
+      <div className="rounded-lg border border-border bg-card p-6">
+        <div className="flex items-center gap-2 text-lg font-semibold text-card-foreground">
+          <ShieldOff className="h-5 w-5" />
+          Tracking Preferences
+        </div>
+        <Separator className="my-4" />
+        <TrackingOptOut />
       </div>
 
       {/* Danger Zone */}

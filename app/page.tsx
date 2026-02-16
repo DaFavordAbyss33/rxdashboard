@@ -62,6 +62,16 @@ export default function HomePage() {
                 Pricing
               </Button>
             </Link>
+            <Link href="/privacy">
+              <Button variant="ghost" size="sm">
+                Privacy Policy
+              </Button>
+            </Link>
+            <Link href="/terms">
+              <Button variant="ghost" size="sm">
+                Terms of Service
+              </Button>
+            </Link>
             <Button onClick={login} className="gap-2">
               <DiscordIcon className="h-4 w-4" />
               Login with Discord
@@ -119,11 +129,20 @@ export default function HomePage() {
 
       {/* Footer */}
       <footer className="border-t border-border px-6 py-6">
-        <div className="mx-auto max-w-6xl text-center text-sm text-muted-foreground">
+        <div className="mx-auto flex max-w-6xl flex-col items-center gap-2 text-center text-sm text-muted-foreground">
           <span className="bg-gradient-to-r from-rx-purple to-rx-orange bg-clip-text font-medium text-transparent">
             RX Systems
           </span>{" "}
           - Manage your Discord bot ecosystem
+          <div className="flex gap-4 text-xs">
+            <Link href="/privacy" className="transition-colors hover:text-foreground">
+              Privacy Policy
+            </Link>
+            <span className="text-border">|</span>
+            <Link href="/terms" className="transition-colors hover:text-foreground">
+              Terms of Service
+            </Link>
+          </div>
         </div>
       </footer>
     </div>
