@@ -101,16 +101,10 @@ export const bots: Bot[] = [
   },
 ]
 
-// Mock installations data
+// Local data stores (populated from database)
 export const installations: Installation[] = []
-
-// Mock user guilds (simulates Discord API response)
 export const guilds: Guild[] = []
-
-// Mock configs
 export const configs: BotConfig[] = []
-
-// Mock incidents
 export const incidents: Incident[] = []
 
 // Helper functions

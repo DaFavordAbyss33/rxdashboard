@@ -1,18 +1,13 @@
 "use client"
 
-import Link from "next/link"
 import { useAuth } from "@/lib/auth-context"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Separator } from "@/components/ui/separator"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { User, Bell, Shield, LogOut, CreditCard, ChevronRight, Award } from "lucide-react"
+import { User, Bell, Shield, LogOut, Award } from "lucide-react"
 import { TierBadge, TierLegend, getTierFromDate } from "@/components/dashboard/tier-badge"
-
-// Demo join date - in production, pull from user session/database
-const DEMO_JOIN_DATE = "2025-06-15T10:30:00Z"
 
 export default function SettingsPage() {
   const { user, logout } = useAuth()
@@ -23,7 +18,8 @@ export default function SettingsPage() {
 
   const initials = user?.username?.slice(0, 2).toUpperCase() ?? "??"
 
-  const userTier = getTierFromDate(DEMO_JOIN_DATE)
+  // Calculate tier from user's join date (falls back to current date if not available)
+  const userTier = getTierFromDate(user?.joinedAt || new Date().toISOString())
 
   return (
     <div className="space-y-6">
@@ -121,15 +117,7 @@ export default function SettingsPage() {
             </div>
             <Switch defaultChecked />
           </div>
-          <div className="flex items-center justify-between">
-            <div>
-              <Label className="text-sm font-medium">Subscription Updates</Label>
-              <p className="text-sm text-muted-foreground">
-                Get notified about subscription activations, renewals, and expirations
-              </p>
-            </div>
-            <Switch defaultChecked />
-          </div>
+
           <div className="flex items-center justify-between">
             <div>
               <Label className="text-sm font-medium">Security Alerts</Label>
@@ -149,31 +137,6 @@ export default function SettingsPage() {
             <Switch defaultChecked />
           </div>
         </div>
-      </div>
-
-      {/* Integrations Section */}
-      <div className="rounded-lg border border-border bg-card p-6">
-        <div className="flex items-center gap-2 text-lg font-semibold text-card-foreground">
-          <CreditCard className="h-5 w-5" />
-          Integrations
-        </div>
-        <Separator className="my-4" />
-        <Link href="/dashboard/settings/stripe-setup">
-          <div className="flex cursor-pointer items-center justify-between rounded-lg border border-border bg-secondary/30 p-4 transition-colors hover:bg-secondary/50">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-rx-purple/20 to-rx-orange/20">
-                <CreditCard className="h-5 w-5 text-rx-purple" />
-              </div>
-              <div>
-                <p className="font-medium text-card-foreground">Stripe Webhook Setup</p>
-                <p className="text-sm text-muted-foreground">
-                  Configure webhooks for subscription billing
-                </p>
-              </div>
-            </div>
-            <ChevronRight className="h-5 w-5 text-muted-foreground" />
-          </div>
-        </Link>
       </div>
 
       {/* Security Section */}

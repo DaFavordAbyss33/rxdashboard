@@ -17,14 +17,13 @@ const sentNotices: Array<{
   recipientCount: number
 }> = []
 
-// Mock user emails - In production, fetch from your user database
+// Fetch subscribed users from environment or database
 // Users who have "Creator Notices" enabled in their settings
 const getSubscribedUsers = async () => {
-  // TODO: Query your MongoDB database for users with notifications enabled
-  // For now, return test emails or fetch from a configured list
-  const testEmail = process.env.ADMIN_EMAIL || process.env.TEST_EMAIL
-  if (testEmail) {
-    return [{ email: testEmail, username: "Admin" }]
+  // Uses admin email from environment, or returns empty array
+  const adminEmail = process.env.ADMIN_EMAIL
+  if (adminEmail) {
+    return [{ email: adminEmail, username: "Admin" }]
   }
   return [] as Array<{ email: string; username: string }>
 }

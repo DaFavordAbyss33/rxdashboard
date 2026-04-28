@@ -8,9 +8,6 @@ import { LayoutDashboard, Settings, AlertTriangle, Server, Bot, Shield, Gavel } 
 import { useAuth } from "@/lib/auth-context"
 import { TierCard, getTierFromDate } from "@/components/dashboard/tier-badge"
 
-// Demo join date - in production, pull from user session/database
-const DEMO_JOIN_DATE = "2025-06-15T10:30:00Z"
-
 const navItems = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard, adminOnly: true },
   { href: "/dashboard/bots", label: "Bots", icon: Bot, adminOnly: false },
@@ -23,9 +20,11 @@ const navItems = [
 
 export function DashboardSidebar() {
   const pathname = usePathname()
-  const { isAdmin } = useAuth()
+  const { isAdmin, user } = useAuth()
 
-  const userTier = getTierFromDate(DEMO_JOIN_DATE)
+  // Calculate tier from user's join date (falls back to current date if not available)
+  const userJoinDate = user?.joinedAt || new Date().toISOString()
+  const userTier = getTierFromDate(userJoinDate)
 
   return (
     <aside className="flex w-64 flex-col border-r border-border bg-sidebar">
@@ -71,7 +70,7 @@ export function DashboardSidebar() {
 
       {/* Tier Card */}
       <div className="px-4 pb-3">
-        <TierCard tier={userTier} joinDate={DEMO_JOIN_DATE} />
+        <TierCard tier={userTier} joinDate={userJoinDate} />
       </div>
 
       {/* Footer */}

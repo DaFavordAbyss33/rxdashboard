@@ -78,75 +78,7 @@ const SEVERITY_STYLES: Record<string, string> = {
   success: "border-l-success",
 }
 
-// Demo notifications to show the categories in action
-const DEMO_NOTIFICATIONS: Notification[] = [
-  {
-    id: "n1",
-    category: "config_change",
-    title: "SyrupRx Config Updated",
-    description: "Role sync settings were changed for Maple Community by DaFavord.",
-    timestamp: new Date(Date.now() - 1000 * 60 * 5).toISOString(),
-    read: false,
-    severity: "info",
-    metadata: { botId: "syruprx", guildId: "guild-1", changedFields: ["roleSync", "staffLogs"] },
-  },
-  {
-    id: "n2",
-    category: "website_change",
-    title: "Dashboard v1.2.0 Released",
-    description: "New notifications panel, tier badges, and performance improvements.",
-    timestamp: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
-    read: false,
-    severity: "success",
-  },
-  {
-    id: "n3",
-    category: "incident",
-    title: "SwissRx Disconnected",
-    description: "Bot went offline unexpectedly. Investigating the issue.",
-    timestamp: new Date(Date.now() - 1000 * 60 * 2).toISOString(),
-    read: false,
-    severity: "error",
-    metadata: { botId: "swissrx" },
-  },
-  {
-    id: "n4",
-    category: "bot_update",
-    title: "SyrupRx v3.1 Deployed",
-    description: "New pager system and improved staff logging features.",
-    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
-    read: true,
-    severity: "info",
-  },
-  {
-    id: "n5",
-    category: "security",
-    title: "New Login Detected",
-    description: "A new login was detected from Chrome on Windows.",
-    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 6).toISOString(),
-    read: true,
-    severity: "warning",
-  },
-  {
-    id: "n6",
-    category: "config_change",
-    title: "SwissRx Settings Changed",
-    description: "Auto-announce settings were updated for Maple Community.",
-    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 8).toISOString(),
-    read: true,
-    severity: "info",
-    metadata: { botId: "swissrx", guildId: "guild-1" },
-  },
-  {
-    id: "n7",
-    category: "system",
-    title: "Scheduled Maintenance",
-    description: "Database maintenance window completed successfully.",
-    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
-    read: true,
-    severity: "info",
-  },
-]
+
 
 function formatRelativeTime(dateString: string): string {
   const now = Date.now()
@@ -180,7 +112,7 @@ export function NotificationsPanel({
   open: boolean
   onClose: () => void
 }) {
-  const [notifications, setNotifications] = useState<Notification[]>(DEMO_NOTIFICATIONS)
+  const [notifications, setNotifications] = useState<Notification[]>([])
   const [selectedCategory, setSelectedCategory] = useState<NotificationCategory | "all">("all")
   const [showCategories, setShowCategories] = useState(false)
 

@@ -15,9 +15,6 @@ import { Bell, LogOut, User } from "lucide-react"
 import { NotificationsPanel } from "@/components/dashboard/notifications-panel"
 import { TierBadge, getTierFromDate } from "@/components/dashboard/tier-badge"
 
-// Demo join date - in production, pull from user session/database
-const DEMO_JOIN_DATE = "2025-06-15T10:30:00Z"
-
 export function DashboardHeader() {
   const { user, logout } = useAuth()
   const [notificationsOpen, setNotificationsOpen] = useState(false)
@@ -28,8 +25,8 @@ export function DashboardHeader() {
 
   const initials = user?.username?.slice(0, 2).toUpperCase() ?? "??"
 
-  // Calculate tier from join date
-  const userTier = getTierFromDate(DEMO_JOIN_DATE)
+  // Calculate tier from user's join date (falls back to current date if not available)
+  const userTier = getTierFromDate(user?.joinedAt || new Date().toISOString())
 
   return (
     <header className="flex h-16 items-center justify-between border-b border-border bg-background px-6">
@@ -52,9 +49,6 @@ export function DashboardHeader() {
             onClick={() => setNotificationsOpen(!notificationsOpen)}
           >
             <Bell className="h-5 w-5" />
-            <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-rx-orange text-[10px] font-medium text-foreground">
-              3
-            </span>
           </Button>
           <NotificationsPanel
             open={notificationsOpen}
