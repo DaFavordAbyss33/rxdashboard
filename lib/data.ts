@@ -1,248 +1,91 @@
 import type { Bot, Installation, Guild, Incident, BotConfig } from "./types"
 
-// Mock bot registry - in production this would come from your database
+// Command categories and their commands for SyrupRx Free
+export const SYRUPRX_COMMANDS = {
+  maple: {
+    name: "Maple Server",
+    description: "Commands for managing your Maple game server",
+    commands: [
+      { name: "setbanner", description: "Set a banner for the Maple server" },
+      { name: "serverqueue", description: "View the current player queue on the game server" },
+      { name: "announce", description: "Send an announcement to the game server" },
+      { name: "serverplayers", description: "List the players currently on the server" },
+      { name: "serverfunctionconfig", description: "Configure server startup/shutdown settings" },
+      { name: "shutdown", description: "Shut down the Maple game server immediately" },
+      { name: "kickplayer", description: "Kick a Roblox player by username or userId" },
+      { name: "servershutdown", description: "Shut down the server and close the session" },
+      { name: "serverstartup", description: "Start the server and open the session" },
+      { name: "serverinfo", description: "Get public server information from Marizma API" },
+      { name: "serverbans", description: "View the current ban list on the game server" },
+      { name: "banplayer", description: "Ban or unban a Roblox user" },
+      { name: "setsetting", description: "Update Maple server settings (hide, private, minlevel)" },
+    ],
+  },
+  admin: {
+    name: "Admin",
+    description: "Administrative and setup commands",
+    commands: [
+      { name: "autoreply-setup", description: "Configure message-based auto replies" },
+      { name: "setup", description: "Interactive SyrupRx setup wizard" },
+      { name: "stafflog-search", description: "Search staff logs by case number or username" },
+      { name: "pagerconfig", description: "Start the pager setup wizard" },
+      { name: "moderationlog", description: "Log an in-game moderation action" },
+      { name: "demotionlog", description: "Log a staff demotion" },
+      { name: "stafflog-setup", description: "Configure staff log channels and authorised roles" },
+      { name: "autoannounce", description: "Configure automatic Marizma announcements" },
+      { name: "promotionlog", description: "Log a staff promotion" },
+    ],
+  },
+  utility: {
+    name: "Utility",
+    description: "General utility commands",
+    commands: [
+      { name: "pager", description: "Send a pager alert to the configured channel and server" },
+    ],
+  },
+}
+
+// Bot registry - SyrupRx Free only
 export const bots: Bot[] = [
   {
     id: "syruprx",
     name: "SyrupRx",
     description: "Maple Hospital utility and staff management bot",
     icon: "/bots/syruprx.png",
-    clientId: "1234567890123456789",
+    clientId: process.env.NEXT_PUBLIC_SYRUPRX_CLIENT_ID || "",
     inviteScopes: ["bot", "applications.commands"],
     permissionsInt: "8",
     capabilities: {
-      channels: ["staffLogs", "modLogs", "shiftLogs"],
+      channels: ["staffLogs", "modLogs", "sessionChannel", "pagerChannel"],
       keys: ["marizmaApiKey", "robloxGroupId"],
-      features: ["shiftTracker", "roleSync", "moderation"],
-      premium: true,
-    },
-    status: "online",
-    guildsCount: 182,
-    wsPing: 64,
-    uptime: "7d 12h 34m",
-    lastIncident: {
-      id: "inc-1",
-      botId: "syruprx",
-      type: "error",
-      message: "Failed to sync roles for guild 123456789",
-      createdAt: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
-    },
-  },
-  {
-    id: "swissrx",
-    name: "SwissRx",
-    description: "LOA and session management system",
-    icon: "/bots/swissrx.png",
-    clientId: "9876543210987654321",
-    inviteScopes: ["bot", "applications.commands"],
-    permissionsInt: "8",
-    capabilities: {
-      channels: ["loaChannel", "sessionChannel", "staffLog"],
-      keys: ["googleSheetsId"],
-      features: ["loa", "sessionCalendar", "staffTracking"],
+      features: [
+        "Server Management",
+        "Staff Logging",
+        "Pager System",
+        "Auto Replies",
+        "Auto Announcements",
+        "Moderation Logs",
+      ],
       premium: false,
     },
-    isPrivate: true, // Custom bot - cannot be added to other servers
     status: "online",
-    guildsCount: 1, // Only in one server
-    wsPing: 52,
-    uptime: "3d 8h 15m",
-  },
-  {
-    id: "autoclockrx",
-    name: "AutoclockRx",
-    description: "Automatic shift logging with MarizmaAPI",
-    icon: "/bots/autoclockrx.png",
-    clientId: "1357924680135792468",
-    inviteScopes: ["bot", "applications.commands"],
-    permissionsInt: "8",
-    capabilities: {
-      channels: ["clockChannel", "reportChannel"],
-      keys: ["robloxGroupId", "marizmaApiKey", "payrollWebhook"],
-      features: ["autoClock", "payrollExport", "activityMonitor", "shiftSchedules"],
-      premium: true,
-    },
-    hasSubscription: true,
-    status: "degraded",
-    guildsCount: 67,
-    wsPing: 128,
-    uptime: "1d 2h 45m",
-    lastIncident: {
-      id: "inc-2",
-      botId: "autoclockrx",
-      type: "warning",
-      message: "High latency detected",
-      createdAt: new Date(Date.now() - 1000 * 60 * 5).toISOString(),
-    },
-  },
-  {
-    id: "mednoterx",
-    name: "MedNoteRx",
-    description: "Discord patient charting and medical documentation",
-    icon: "/bots/mednoterx.png",
-    clientId: "2468135790246813579",
-    inviteScopes: ["bot", "applications.commands"],
-    permissionsInt: "8",
-    capabilities: {
-      channels: ["alertChannel", "logChannel", "chartingChannel"],
-      keys: ["webhookUrl", "emrApiKey"],
-      features: ["patientCharting", "alerts", "scheduling", "exportReports"],
-      premium: true,
-    },
-    hasSubscription: true,
-    status: "offline",
-    guildsCount: 23,
-    wsPing: 0,
+    guildsCount: 0,
+    wsPing: 64,
     uptime: "0d 0h 0m",
-lastIncident: {
-      id: "inc-3",
-      botId: "mednoterx",
-      type: "error",
-      message: "Bot disconnected unexpectedly",
-      createdAt: new Date(Date.now() - 1000 * 60 * 2).toISOString(),
-    },
-  },
-  {
-    id: "syruprx-pro",
-    name: "SyrupRx PRO",
-    description: "Premium features and advanced analytics",
-    icon: "/bots/syruprx-pro.png",
-    clientId: "1122334455667788990",
-    inviteScopes: ["bot", "applications.commands"],
-    permissionsInt: "8",
-    capabilities: {
-      channels: ["analyticsChannel", "premiumLogs"],
-      keys: ["stripeCustomerId", "analyticsKey"],
-      features: ["premiumGate", "analytics", "customBranding"],
-      premium: true,
-    },
-    hasSubscription: true,
-    status: "online",
-    guildsCount: 156,
-    wsPing: 45,
-    uptime: "14d 6h 22m",
   },
 ]
 
 // Mock installations data
-export const installations: Installation[] = [
-  {
-    botId: "syruprx",
-    guildId: "guild-1",
-    guildName: "Maple Community",
-    guildIcon: null,
-    installedAt: "2025-06-15T10:30:00Z",
-    lastSeenAt: new Date().toISOString(),
-    premiumStatus: "active",
-  },
-  {
-    botId: "syruprx",
-    guildId: "guild-2",
-    guildName: "Dev Server",
-    guildIcon: null,
-    installedAt: "2025-08-20T14:45:00Z",
-    lastSeenAt: new Date().toISOString(),
-    premiumStatus: "trial",
-  },
-  {
-    botId: "swissrx",
-    guildId: "guild-1",
-    guildName: "Maple Community",
-    guildIcon: null,
-    installedAt: "2025-07-01T09:00:00Z",
-    lastSeenAt: new Date().toISOString(),
-    // SwissRx is a private bot - only installed on this one server
-  },
-  {
-    botId: "syruprx-pro",
-    guildId: "guild-2",
-    guildName: "Dev Server",
-    guildIcon: null,
-    installedAt: "2025-09-10T16:20:00Z",
-    lastSeenAt: new Date().toISOString(),
-    premiumStatus: "active",
-  },
-]
+export const installations: Installation[] = []
 
 // Mock user guilds (simulates Discord API response)
-export const guilds: Guild[] = [
-  {
-    id: "guild-1",
-    name: "Maple Community",
-    icon: null,
-    memberCount: 1250,
-    owner: true,
-    permissions: "2147483647", // Administrator
-  },
-  {
-    id: "guild-2",
-    name: "Dev Server",
-    icon: null,
-    memberCount: 45,
-    owner: true,
-    permissions: "2147483647",
-  },
-  {
-    id: "guild-3",
-    name: "Testing Ground",
-    icon: null,
-    memberCount: 120,
-    owner: false,
-    permissions: "32", // Manage Guild
-  },
-]
+export const guilds: Guild[] = []
 
 // Mock configs
-export const configs: BotConfig[] = [
-  {
-    botId: "syruprx",
-    guildId: "guild-1",
-    config: {
-      staffLogs: "1234567890",
-      modLogs: "1234567891",
-      marizmaApiKey: "••••••••abcd",
-      roleSync: true,
-      shiftTracker: true,
-    },
-    updatedBy: "user-1",
-    updatedAt: "2026-01-28T12:00:00Z",
-  },
-]
+export const configs: BotConfig[] = []
 
 // Mock incidents
-export const incidents: Incident[] = [
-  {
-    id: "inc-1",
-    botId: "syruprx",
-    guildId: "guild-1",
-    type: "error",
-    message: "Failed to sync roles for guild",
-    stack: "Error: Role sync failed\n    at RoleSync.execute (/src/jobs/roleSync.ts:45:11)",
-    createdAt: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
-  },
-  {
-    id: "inc-2",
-    botId: "autoclockrx",
-    type: "warning",
-    message: "High latency detected - WS ping above 100ms",
-    createdAt: new Date(Date.now() - 1000 * 60 * 5).toISOString(),
-  },
-  {
-    id: "inc-3",
-    botId: "mednoterx",
-    type: "error",
-    message: "Bot disconnected unexpectedly",
-    stack: "Error: Connection closed\n    at WebSocket.onClose (/src/client.ts:120:8)",
-    createdAt: new Date(Date.now() - 1000 * 60 * 2).toISOString(),
-  },
-  {
-    id: "inc-4",
-    botId: "swissrx",
-    type: "info",
-    message: "Successfully processed 150 LOA requests",
-    createdAt: new Date(Date.now() - 1000 * 60 * 60).toISOString(),
-  },
-]
+export const incidents: Incident[] = []
 
 // Helper functions
 export function getBotById(id: string): Bot | undefined {
@@ -291,4 +134,28 @@ export function hasManageGuildPermission(permissions: string): boolean {
   const MANAGE_GUILD = BigInt(0x20) // 32
   const ADMINISTRATOR = BigInt(0x8) // 8
   return (permInt & MANAGE_GUILD) === MANAGE_GUILD || (permInt & ADMINISTRATOR) === ADMINISTRATOR
+}
+
+// Get all commands flat list
+export function getAllCommands() {
+  const allCommands: { name: string; description: string; category: string }[] = []
+  
+  for (const [categoryId, category] of Object.entries(SYRUPRX_COMMANDS)) {
+    for (const command of category.commands) {
+      allCommands.push({
+        ...command,
+        category: category.name,
+      })
+    }
+  }
+  
+  return allCommands
+}
+
+// Get total command count
+export function getCommandCount(): number {
+  return Object.values(SYRUPRX_COMMANDS).reduce(
+    (total, category) => total + category.commands.length,
+    0
+  )
 }

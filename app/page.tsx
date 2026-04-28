@@ -7,11 +7,13 @@ import { useRouter } from "next/navigation"
 import { useEffect } from "react"
 import Image from "next/image"
 import { Button } from "@/components/ui/button"
-import { Shield, Zap, Users } from "lucide-react"
+import { Shield, Zap, Users, Terminal } from "lucide-react"
+import { getCommandCount } from "@/lib/data"
 
 export default function HomePage() {
   const { isAuthenticated, isLoading, login } = useAuth()
   const router = useRouter()
+  const commandCount = getCommandCount()
 
   useEffect(() => {
     if (isAuthenticated && !isLoading) {
@@ -42,24 +44,19 @@ export default function HomePage() {
           <div className="flex items-center gap-3">
             <Image
               src="/images/rxsystems.png"
-              alt="RX Systems"
+              alt="SyrupRx"
               width={40}
               height={40}
               className="rounded-lg"
             />
             <span className="bg-gradient-to-r from-rx-purple to-rx-orange bg-clip-text text-lg font-semibold text-transparent">
-              RX Systems
+              SyrupRx
             </span>
           </div>
           <nav className="flex items-center gap-2">
             <Link href="/bots">
               <Button variant="ghost" size="sm">
-                Our Bots
-              </Button>
-            </Link>
-            <Link href="/pricing">
-              <Button variant="ghost" size="sm">
-                Pricing
+                Commands
               </Button>
             </Link>
             <Button onClick={login} className="gap-2">
@@ -74,15 +71,15 @@ export default function HomePage() {
       <main className="flex flex-1 flex-col items-center justify-center px-6 py-16">
         <div className="mx-auto max-w-3xl text-center">
           <h1 className="text-balance text-4xl font-bold tracking-tight text-foreground sm:text-5xl">
-            Manage all your{" "}
+            The ultimate{" "}
             <span className="bg-gradient-to-r from-rx-purple to-rx-orange bg-clip-text text-transparent">
-              RX Systems
+              Maple Hospital
             </span>{" "}
-            bots in one place
+            Discord bot
           </h1>
           <p className="mt-6 text-pretty text-lg text-muted-foreground">
-            A unified control panel for SyrupRx, SwissRx, AutoclockRx, MedNoteRx, and SyrupRx PRO.
-            Monitor status, configure settings, and manage guilds with ease.
+            SyrupRx is a free utility and staff management bot for Maple Hospital servers.
+            Manage your game server, track staff, send pager alerts, and keep your community organized.
           </p>
           <div className="mt-10 flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
             <Button size="lg" onClick={login} className="gap-2">
@@ -91,28 +88,33 @@ export default function HomePage() {
             </Button>
             <Link href="/bots">
               <Button size="lg" variant="outline">
-                Explore Our Bots
+                View Commands
               </Button>
             </Link>
           </div>
         </div>
 
         {/* Features */}
-        <div className="mx-auto mt-20 grid max-w-4xl gap-6 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="mx-auto mt-20 grid max-w-4xl gap-6 sm:grid-cols-2 lg:grid-cols-4">
           <FeatureCard
             icon={Shield}
             title="Secure Access"
-            description="Discord OAuth ensures only authorized users can manage your bots and servers."
+            description="Discord OAuth ensures only authorized users can manage your server."
           />
           <FeatureCard
             icon={Zap}
-            title="Real-time Status"
-            description="Monitor bot health, latency, and incidents as they happen."
+            title="Real-time Control"
+            description="Manage your Maple server directly from Discord with instant feedback."
           />
           <FeatureCard
             icon={Users}
-            title="Multi-Guild Support"
-            description="Manage configurations across all your servers from a single dashboard."
+            title="Staff Management"
+            description="Track promotions, demotions, and moderation logs in one place."
+          />
+          <FeatureCard
+            icon={Terminal}
+            title={`${commandCount} Commands`}
+            description="Server management, pager alerts, auto-replies, and more."
           />
         </div>
       </main>
@@ -121,9 +123,9 @@ export default function HomePage() {
       <footer className="border-t border-border px-6 py-6">
         <div className="mx-auto max-w-6xl text-center text-sm text-muted-foreground">
           <span className="bg-gradient-to-r from-rx-purple to-rx-orange bg-clip-text font-medium text-transparent">
-            RX Systems
+            SyrupRx
           </span>{" "}
-          - Manage your Discord bot ecosystem
+          - Free Discord bot for Maple Hospital communities
         </div>
       </footer>
     </div>

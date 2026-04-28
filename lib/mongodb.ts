@@ -1,27 +1,10 @@
 import { MongoClient, Db } from "mongodb"
 
-// v5: GRACEFUL ERROR HANDLING - Returns null, NEVER throws for missing config
-// Bot database configuration - check if env vars exist before using
+// Bot database configuration - SyrupRx Free only
 export const BOT_DATABASES = {
   syruprx: {
     uri: process.env.MONGODB_URI_SYRUPRX || "",
     name: "SyrupRx",
-  },
-  "syruprx-pro": {
-    uri: process.env.MONGODB_URI_SYRUPRX_PRO || "",
-    name: "SyrupRx PRO",
-  },
-  autoclockrx: {
-    uri: process.env.MONGODB_URI_AUTOCLOCKRX || "",
-    name: "AutoclockRx",
-  },
-  mednoterx: {
-    uri: process.env.MONGODB_URI_MEDNOTERX || "",
-    name: "MedNoteRx",
-  },
-  swissrx: {
-    uri: process.env.MONGODB_URI_SWISSRX || "",
-    name: "SwissRx",
   },
 } as const
 
@@ -108,49 +91,6 @@ export async function getGuildStats(botId: BotId) {
   }
 }
 
-// Get subscription/premium data from a bot's database
-export async function getSubscriptionStats(botId: BotId) {
-  // Check configuration first - return gracefully if not configured
-  if (!isBotConfigured(botId)) {
-    return {
-      activeSubscriptions: 0,
-      totalSubscriptions: 0,
-      connected: false,
-    }
-  }
-
-  try {
-    const db = await getBotDatabase(botId)
-    if (!db) {
-      return {
-        activeSubscriptions: 0,
-        totalSubscriptions: 0,
-        connected: false,
-      }
-    }
-    
-    // Common collection names - adjust based on your actual schema
-    const subscriptionsCollection = db.collection("subscriptions")
-    const activeSubscriptions = await subscriptionsCollection.countDocuments({
-      status: { $in: ["active", "trialing"] },
-    })
-    const totalSubscriptions = await subscriptionsCollection.countDocuments()
-    
-    return {
-      activeSubscriptions,
-      totalSubscriptions,
-      connected: true,
-    }
-  } catch (error) {
-    console.error(`[mongodb] Failed to get subscription stats for ${botId}:`, error)
-    return {
-      activeSubscriptions: 0,
-      totalSubscriptions: 0,
-      connected: false,
-    }
-  }
-}
-
 // Get recent logs/incidents from a bot's database
 export async function getRecentIncidents(botId: BotId, limit: number = 10) {
   // Check configuration first - return gracefully if not configured
@@ -209,19 +149,6 @@ export interface BotSettings {
   updatedBy?: string
 }
 
-export interface SubscriptionRecord {
-  odiscordUserId: string
-  odiscordGuildId: string
-  stripeCustomerId?: string
-  stripeSubscriptionId?: string
-  plan: string
-  status: "active" | "canceled" | "past_due" | "trialing" | "expired"
-  features: string[]
-  expiresAt?: string
-  createdAt: string
-  updatedAt: string
-}
-
 // Get bot settings from MongoDB
 export async function getBotSettings(botId: BotId): Promise<BotSettings | null> {
   if (!isBotConfigured(botId)) {
@@ -242,7 +169,7 @@ export async function getBotSettings(botId: BotId): Promise<BotSettings | null> 
         debugLogging: false,
         autoRestart: true,
         customStatus: "",
-        commandPrefix: "!",
+        commandPrefix: "/",
         enabledFeatures: [],
         updatedAt: new Date().toISOString(),
       }
@@ -300,103 +227,7 @@ export async function updateBotSettings(
   }
 }
 
-// Get subscription status for a user/guild
-export async function getSubscription(
-  botId: BotId,
-  discordUserId?: string,
-  discordGuildId?: string
-): Promise<SubscriptionRecord | null> {
-  if (!isBotConfigured(botId)) {
-    return null
-  }
-
-  try {
-    const db = await getBotDatabase(botId)
-    if (!db) return null
-
-    const subscriptionsCollection = db.collection("subscriptions")
-    
-    const query: Record<string, string> = {}
-    if (discordUserId) query.discordUserId = discordUserId
-    if (discordGuildId) query.discordGuildId = discordGuildId
-    
-    const subscription = await subscriptionsCollection.findOne(query)
-    return subscription as SubscriptionRecord | null
-  } catch (error) {
-    console.error(`[mongodb] Failed to get subscription for ${botId}:`, error)
-    return null
-  }
-}
-
-// Create or update subscription - syncs Stripe data to bot database
-export async function syncSubscription(
-  botId: BotId,
-  subscription: Partial<SubscriptionRecord> & { discordUserId: string }
-): Promise<boolean> {
-  if (!isBotConfigured(botId)) {
-    return false
-  }
-
-  try {
-    const db = await getBotDatabase(botId)
-    if (!db) return false
-
-    const subscriptionsCollection = db.collection("subscriptions")
-    
-    await subscriptionsCollection.updateOne(
-      { discordUserId: subscription.discordUserId },
-      { 
-        $set: {
-          ...subscription,
-          updatedAt: new Date().toISOString(),
-        },
-        $setOnInsert: {
-          createdAt: new Date().toISOString(),
-        }
-      },
-      { upsert: true }
-    )
-
-    return true
-  } catch (error) {
-    console.error(`[mongodb] Failed to sync subscription for ${botId}:`, error)
-    return false
-  }
-}
-
-// Cancel/expire a subscription
-export async function cancelSubscription(
-  botId: BotId,
-  discordUserId: string
-): Promise<boolean> {
-  if (!isBotConfigured(botId)) {
-    return false
-  }
-
-  try {
-    const db = await getBotDatabase(botId)
-    if (!db) return false
-
-    const subscriptionsCollection = db.collection("subscriptions")
-    
-    await subscriptionsCollection.updateOne(
-      { discordUserId },
-      { 
-        $set: {
-          status: "canceled",
-          updatedAt: new Date().toISOString(),
-        }
-      }
-    )
-
-    return true
-  } catch (error) {
-    console.error(`[mongodb] Failed to cancel subscription for ${botId}:`, error)
-    return false
-  }
-}
-
-// Queue a command for the bot to execute (e.g., leave server)
+// Queue a command for the bot to execute
 export async function queueBotCommand(
   botId: BotId,
   command: {

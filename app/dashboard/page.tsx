@@ -8,7 +8,7 @@ import { useAuth } from "@/lib/auth-context"
 import { BotStatusCard } from "@/components/dashboard/bot-status-card"
 import { IncidentsList } from "@/components/dashboard/incidents-list"
 import { StatsCard } from "@/components/dashboard/stats-card"
-import { Bot, Server, AlertTriangle, DollarSign, RefreshCw, Shield } from "lucide-react"
+import { Bot, Server, AlertTriangle, RefreshCw, Shield, Terminal } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 
@@ -124,18 +124,17 @@ export default function DashboardPage() {
               trend="Across all bots"
             />
             <StatsCard
-              title="Active Subscriptions"
-              value={(stats.subscriptions?.active || 0).toString()}
-              icon={AlertTriangle}
-              trend="Paid customers"
-              trendUp={true}
+              title="Total Commands"
+              value="23"
+              icon={Terminal}
+              trend="Server management, staff logs, pager"
             />
             <StatsCard
-              title="Monthly Revenue"
-              value={`$${(stats.revenue?.mrr || 0).toLocaleString()}`}
-              icon={DollarSign}
-              trend={`$${(stats.revenue?.available || 0).toFixed(2)} available`}
-              trendUp={true}
+              title="Open Incidents"
+              value={(stats.incidents?.open || 0).toString()}
+              icon={AlertTriangle}
+              trend="Requiring attention"
+              trendUp={stats.incidents?.open === 0}
             />
           </>
         )}

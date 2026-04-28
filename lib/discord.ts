@@ -3,10 +3,6 @@ const DISCORD_API_BASE = "https://discord.com/api/v10"
 
 export const BOT_TOKENS = {
   syruprx: process.env.DISCORD_BOT_TOKEN_SYRUPRX!,
-  "syruprx-pro": process.env.DISCORD_BOT_TOKEN_SYRUPRX_PRO!,
-  autoclockrx: process.env.DISCORD_BOT_TOKEN_AUTOCLOCKRX!,
-  mednoterx: process.env.DISCORD_BOT_TOKEN_MEDNOTERX!,
-  swissrx: process.env.DISCORD_BOT_TOKEN_SWISSRX!,
 } as const
 
 export type BotId = keyof typeof BOT_TOKENS

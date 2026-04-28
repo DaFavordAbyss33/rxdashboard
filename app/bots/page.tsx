@@ -7,105 +7,19 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
-import { ArrowLeft, ExternalLink, Lock, Sparkles, Server, Clock, FileText, Activity, RefreshCw, Wifi, WifiOff } from "lucide-react"
-
-// Static metadata for each bot that doesn't change
-const BOT_METADATA: Record<string, {
-  color: string
-  features: string[]
-  free: boolean
-  hasPremium: boolean
-  priceFrom?: string
-  featureIcon: typeof Server
-  longDescription: string
-  name: string
-  description: string
-  icon: string
-  isPrivate?: boolean
-}> = {
-  syruprx: {
-    name: "SyrupRx",
-    description: "Maple Hospital utility and staff management bot",
-    icon: "/bots/syruprx.png",
-    color: "from-rx-purple to-rx-orange",
-    features: ["Shift Tracking", "Role Sync", "Staff Management", "Moderation Logs"],
-    free: true,
-    hasPremium: false,
-    featureIcon: Server,
-    longDescription: "The ultimate utility and staff management bot for Maple Hospital servers. Track shifts, manage roles, and keep your staff organized.",
-  },
-  "syruprx-pro": {
-    name: "SyrupRx PRO",
-    description: "Premium features and advanced analytics",
-    icon: "/bots/syruprx-pro.png",
-    color: "from-rx-purple to-rx-orange",
-    features: ["Advanced Analytics", "Custom Branding", "Priority Support", "Unlimited Commands"],
-    free: false,
-    hasPremium: true,
-    priceFrom: "$7.99",
-    featureIcon: Sparkles,
-    longDescription: "Premium features and advanced analytics for power users. Custom branding, detailed reports, and priority support.",
-  },
-  autoclockrx: {
-    name: "AutoclockRx",
-    description: "Automatic shift logging with MarizmaAPI",
-    icon: "/bots/autoclockrx.png",
-    color: "from-blue-500 to-cyan-500",
-    features: ["Auto Clock-In/Out", "Payroll Export", "Activity Monitor", "Shift Schedules"],
-    free: false,
-    hasPremium: true,
-    priceFrom: "$10.39",
-    featureIcon: Clock,
-    longDescription: "Automatic shift logging with MarizmaAPI integration. Export payroll data, monitor activity, and manage schedules effortlessly.",
-  },
-  mednoterx: {
-    name: "MedNoteRx",
-    description: "Discord patient charting and medical documentation",
-    icon: "/bots/mednoterx.png",
-    color: "from-emerald-500 to-teal-500",
-    features: ["Patient Charting", "Medical Templates", "Export to PDF", "Multi-Department"],
-    free: false,
-    hasPremium: true,
-    priceFrom: "$11.99",
-    featureIcon: FileText,
-    longDescription: "Discord-native patient charting and medical documentation. Perfect for healthcare roleplay communities and training servers.",
-  },
-  swissrx: {
-    name: "SwissRx",
-    description: "LOA and session management system",
-    icon: "/bots/swissrx.png",
-    color: "from-red-500 to-rose-500",
-    features: ["LOA Management", "Session Calendar", "Staff Tracking", "Google Sheets Sync"],
-    free: true,
-    hasPremium: false,
-    featureIcon: Activity,
-    longDescription: "LOA management and session scheduling system. Track leaves of absence and organize training sessions with ease.",
-    isPrivate: true,
-  },
-}
+import { ArrowLeft, ExternalLink, Server, RefreshCw, Wifi, WifiOff, Terminal } from "lucide-react"
+import { SYRUPRX_COMMANDS, getCommandCount } from "@/lib/data"
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json())
-
-// Fallback bot list when API is unavailable
-const FALLBACK_BOTS = Object.entries(BOT_METADATA).map(([id, meta]) => ({
-  id,
-  name: meta.name,
-  description: meta.description,
-  icon: meta.icon,
-  clientId: "", // Will use invite links without client ID check
-  status: "offline" as const,
-  guildsCount: 0,
-  isPrivate: meta.isPrivate || false,
-  hasSubscription: meta.hasPremium,
-}))
 
 export default function BotsPage() {
   const { data, error, isLoading, mutate } = useSWR("/api/bots/public", fetcher, {
     refreshInterval: 60000, // Refresh every minute for public page
   })
 
-  // Use fetched bots if available, otherwise use fallback static data
-  const bots = data?.bots?.length > 0 ? data.bots : (error || !data ? FALLBACK_BOTS : [])
+  const bot = data?.bots?.[0] || null
+  const commandCount = getCommandCount()
+
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
@@ -120,15 +34,10 @@ export default function BotsPage() {
               className="rounded-lg"
             />
             <span className="bg-gradient-to-r from-rx-purple to-rx-orange bg-clip-text text-lg font-semibold text-transparent">
-              RX Systems
+              SyrupRx
             </span>
           </Link>
           <div className="flex items-center gap-4">
-            <Link href="/pricing">
-              <Button variant="ghost" size="sm">
-                Pricing
-              </Button>
-            </Link>
             <Link href="/">
               <Button variant="ghost" size="sm" className="gap-2">
                 <ArrowLeft className="h-4 w-4" />
@@ -143,27 +52,25 @@ export default function BotsPage() {
         {/* Hero */}
         <div className="mb-16 text-center">
           <Badge className="mb-4 bg-rx-purple/20 text-rx-purple hover:bg-rx-purple/30">
-            Our Bots
+            Free Bot
           </Badge>
           <h1 className="text-balance text-4xl font-bold tracking-tight text-foreground sm:text-5xl">
-            Powerful bots for your Discord server
+            SyrupRx - Maple Hospital Bot
           </h1>
           <p className="mx-auto mt-6 max-w-2xl text-pretty text-lg text-muted-foreground">
-            From staff management to medical documentation, we have a bot for every need in your
-            healthcare roleplay community.
+            The ultimate utility and staff management bot for Maple Hospital servers.
+            Manage your game server, track staff, and keep your community organized.
           </p>
         </div>
 
         {/* Loading State */}
         {isLoading && (
-          <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
-            {[...Array(5)].map((_, i) => (
-              <Skeleton key={i} className="h-96 rounded-lg" />
-            ))}
+          <div className="mx-auto max-w-2xl">
+            <Skeleton className="h-96 rounded-lg" />
           </div>
         )}
 
-        {/* Error State - Show static data */}
+        {/* Error State */}
         {error && (
           <div className="mb-8 flex items-center justify-center gap-2 rounded-lg border border-yellow-500/50 bg-yellow-500/10 p-4 text-sm text-yellow-600">
             <WifiOff className="h-4 w-4" />
@@ -171,144 +78,135 @@ export default function BotsPage() {
           </div>
         )}
 
-        {/* Bot Cards */}
+        {/* Bot Card */}
         {!isLoading && (
-          <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
-            {bots.map((bot: any) => {
-              const metadata = BOT_METADATA[bot.id] || {}
-              return (
-                <Card key={bot.id} className="group flex flex-col border-border bg-card transition-all hover:border-rx-purple/50">
-                  <CardHeader>
-                    <div className="flex items-start justify-between">
-                      <div className={`rounded-xl bg-gradient-to-br ${metadata.color || "from-gray-500 to-gray-600"} p-0.5`}>
-                        <div className="rounded-[10px] bg-background p-2">
-                          <Image
-                            src={bot.icon || "/placeholder.svg"}
-                            alt={bot.name}
-                            width={48}
-                            height={48}
-                            className="h-12 w-12 rounded-lg object-cover"
-                          />
-                        </div>
-                      </div>
-                      <div className="flex gap-2">
-                        {/* Live Status Indicator */}
-                        <Badge 
-                          variant="secondary" 
-                          className={`gap-1 ${
-                            bot.status === "online" 
-                              ? "bg-success/20 text-success" 
-                              : bot.status === "degraded"
-                              ? "bg-yellow-500/20 text-yellow-600"
-                              : "bg-destructive/20 text-destructive"
-                          }`}
-                        >
-                          {bot.status === "online" ? (
-                            <Wifi className="h-3 w-3" />
-                          ) : (
-                            <WifiOff className="h-3 w-3" />
-                          )}
-                          {bot.status === "online" ? "Online" : bot.status === "degraded" ? "Degraded" : "Offline"}
-                        </Badge>
-                        {bot.isPrivate && (
-                          <Badge variant="secondary" className="gap-1">
-                            <Lock className="h-3 w-3" />
-                            Private
-                          </Badge>
-                        )}
-                        {metadata.hasPremium && (
-                          <Badge className="gap-1 bg-gradient-to-r from-rx-purple to-rx-orange text-primary-foreground">
-                            <Sparkles className="h-3 w-3" />
-                            Premium
-                          </Badge>
-                        )}
-                      </div>
+          <div className="mx-auto max-w-2xl">
+            <Card className="border-border bg-card">
+              <CardHeader>
+                <div className="flex items-start justify-between">
+                  <div className="rounded-xl bg-gradient-to-br from-rx-purple to-rx-orange p-0.5">
+                    <div className="rounded-[10px] bg-background p-2">
+                      <Image
+                        src="/bots/syruprx.png"
+                        alt="SyrupRx"
+                        width={64}
+                        height={64}
+                        className="h-16 w-16 rounded-lg object-cover"
+                      />
                     </div>
-                    <CardTitle className="mt-4 text-xl text-card-foreground">{bot.name}</CardTitle>
-                    <CardDescription className="text-sm">{metadata.longDescription || bot.description}</CardDescription>
-                  </CardHeader>
-                  
-                  <CardContent className="flex-1">
-                    <div className="mb-4 flex items-center gap-4 text-sm text-muted-foreground">
-                      <span className="flex items-center gap-1">
-                        <Server className="h-4 w-4" />
-                        {bot.guildsCount?.toLocaleString() || 0} servers
-                      </span>
-                      {bot.activeSubscriptions > 0 && (
-                        <span className="flex items-center gap-1">
-                          <Sparkles className="h-4 w-4 text-rx-purple" />
-                          {bot.activeSubscriptions} premium
-                        </span>
-                      )}
-                    </div>
-                    
-                    <div className="space-y-2">
-                      <p className="text-xs font-medium uppercase text-muted-foreground">Features</p>
-                      <div className="flex flex-wrap gap-2">
-                        {(metadata.features || bot.capabilities?.features || []).map((feature: string) => (
-                          <Badge key={feature} variant="outline" className="text-xs">
-                            {feature}
-                          </Badge>
-                        ))}
-                      </div>
-                    </div>
-                  </CardContent>
-                  
-                  <CardFooter className="flex flex-col gap-3 border-t border-border pt-4">
-                    {metadata.hasPremium && metadata.priceFrom && (
-                      <p className="text-sm text-muted-foreground">
-                        From <span className="font-semibold text-foreground">{metadata.priceFrom}</span>/month
-                      </p>
+                  </div>
+                  <Badge 
+                    variant="secondary" 
+                    className={`gap-1 ${
+                      bot?.status === "online" 
+                        ? "bg-success/20 text-success" 
+                        : bot?.status === "degraded"
+                        ? "bg-yellow-500/20 text-yellow-600"
+                        : "bg-destructive/20 text-destructive"
+                    }`}
+                  >
+                    {bot?.status === "online" ? (
+                      <Wifi className="h-3 w-3" />
+                    ) : (
+                      <WifiOff className="h-3 w-3" />
                     )}
-                    <div className="flex w-full gap-2">
-                      {bot.isPrivate || metadata.isPrivate ? (
-                        <Button disabled className="flex-1" variant="outline">
-                          Private Bot
-                        </Button>
-                      ) : bot.clientId ? (
-                        <>
-                          <Button className="flex-1 gap-2" variant="outline" asChild>
-                            <a
-                              href={`https://discord.com/oauth2/authorize?client_id=${bot.clientId}&scope=bot+applications.commands&permissions=8`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                            >
-                              <ExternalLink className="h-4 w-4" />
-                              Add to Server
-                            </a>
-                          </Button>
-                          {metadata.hasPremium && (
-                            <Link href={`/pricing#${bot.id}`}>
-                              <Button className="bg-gradient-to-r from-rx-purple to-rx-orange text-primary-foreground hover:opacity-90">
-                                Upgrade
-                              </Button>
-                            </Link>
-                          )}
-                        </>
-                      ) : (
-                        <>
-                          <Button className="flex-1 gap-2" variant="outline" asChild>
-                            <Link href="/dashboard">
-                              <ExternalLink className="h-4 w-4" />
-                              Login to Invite
-                            </Link>
-                          </Button>
-                          {metadata.hasPremium && (
-                            <Link href={`/pricing#${bot.id}`}>
-                              <Button className="bg-gradient-to-r from-rx-purple to-rx-orange text-primary-foreground hover:opacity-90">
-                                Upgrade
-                              </Button>
-                            </Link>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  </CardFooter>
-                </Card>
-              )
-            })}
+                    {bot?.status === "online" ? "Online" : bot?.status === "degraded" ? "Degraded" : "Offline"}
+                  </Badge>
+                </div>
+                <CardTitle className="mt-4 text-2xl text-card-foreground">SyrupRx</CardTitle>
+                <CardDescription className="text-base">
+                  Maple Hospital utility and staff management bot. Features server management,
+                  staff logging, pager system, auto replies, and more.
+                </CardDescription>
+              </CardHeader>
+              
+              <CardContent className="space-y-6">
+                <div className="flex items-center gap-6 text-sm text-muted-foreground">
+                  <span className="flex items-center gap-2">
+                    <Server className="h-4 w-4" />
+                    {bot?.guildsCount?.toLocaleString() || 0} servers
+                  </span>
+                  <span className="flex items-center gap-2">
+                    <Terminal className="h-4 w-4" />
+                    {commandCount} commands
+                  </span>
+                </div>
+
+                <div className="space-y-2">
+                  <p className="text-xs font-medium uppercase text-muted-foreground">Features</p>
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      "Server Management",
+                      "Staff Logging",
+                      "Pager System",
+                      "Auto Replies",
+                      "Auto Announcements",
+                      "Moderation Logs",
+                      "Marizma Integration",
+                    ].map((feature) => (
+                      <Badge key={feature} variant="outline" className="text-xs">
+                        {feature}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              </CardContent>
+              
+              <CardFooter className="border-t border-border pt-4">
+                <div className="flex w-full gap-3">
+                  {bot?.clientId ? (
+                    <Button className="flex-1 gap-2 bg-gradient-to-r from-rx-purple to-rx-orange text-white hover:opacity-90" asChild>
+                      <a
+                        href={`https://discord.com/oauth2/authorize?client_id=${bot.clientId}&scope=bot+applications.commands&permissions=8`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        <ExternalLink className="h-4 w-4" />
+                        Add to Server
+                      </a>
+                    </Button>
+                  ) : (
+                    <Button className="flex-1 gap-2 bg-gradient-to-r from-rx-purple to-rx-orange text-white hover:opacity-90" asChild>
+                      <Link href="/dashboard">
+                        <ExternalLink className="h-4 w-4" />
+                        Login to Invite
+                      </Link>
+                    </Button>
+                  )}
+                </div>
+              </CardFooter>
+            </Card>
           </div>
         )}
+
+        {/* Commands Section */}
+        <section className="mt-16">
+          <h2 className="mb-8 text-center text-2xl font-bold text-foreground">
+            Commands ({commandCount})
+          </h2>
+          <div className="grid gap-6 md:grid-cols-3">
+            {Object.entries(SYRUPRX_COMMANDS).map(([categoryId, category]) => (
+              <Card key={categoryId} className="border-border bg-card">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-lg text-card-foreground">{category.name}</CardTitle>
+                  <CardDescription>{category.description}</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <ul className="space-y-2">
+                    {category.commands.map((command) => (
+                      <li key={command.name} className="text-sm">
+                        <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-rx-purple">
+                          /{command.name}
+                        </code>
+                        <p className="mt-0.5 text-muted-foreground">{command.description}</p>
+                      </li>
+                    ))}
+                  </ul>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </section>
 
         {/* Live Data Indicator */}
         {data?.timestamp && (
@@ -324,12 +222,12 @@ export default function BotsPage() {
         {/* CTA */}
         <section className="mt-24 text-center">
           <div className="rounded-2xl bg-gradient-to-r from-rx-purple/10 to-rx-orange/10 px-8 py-12">
-            <h2 className="text-2xl font-bold text-foreground">Need a custom solution?</h2>
+            <h2 className="text-2xl font-bold text-foreground">Need help or have questions?</h2>
             <p className="mt-2 text-muted-foreground">
-              Contact us for custom bot development or enterprise solutions.
+              Join our Discord server for support and updates.
             </p>
             <Button size="lg" className="mt-6" variant="outline">
-              Contact Us
+              Join Support Server
             </Button>
           </div>
         </section>
@@ -339,9 +237,9 @@ export default function BotsPage() {
       <footer className="border-t border-border px-6 py-8">
         <div className="mx-auto max-w-6xl text-center text-sm text-muted-foreground">
           <span className="bg-gradient-to-r from-rx-purple to-rx-orange bg-clip-text font-medium text-transparent">
-            RX Systems
+            SyrupRx
           </span>{" "}
-          - Premium Discord bots for healthcare roleplay communities
+          - Free Discord bot for Maple Hospital communities
         </div>
       </footer>
     </div>
