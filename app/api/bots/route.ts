@@ -2,7 +2,7 @@ import { NextResponse } from "next/server"
 import { getAllBotsStatus, type BotId } from "@/lib/discord"
 import { getGuildStats, BOT_DATABASES } from "@/lib/mongodb"
 
-// Bot metadata for SyrupRx Free
+// Bot metadata for SyrupRx and SwissRx
 const BOT_METADATA: Record<BotId, {
   name: string
   description: string
@@ -21,6 +21,26 @@ const BOT_METADATA: Record<BotId, {
     description: "Maple Hospital utility and staff management bot",
     icon: "/bots/syruprx.png",
     clientId: process.env.DISCORD_CLIENT_ID_SYRUPRX || process.env.NEXT_PUBLIC_SYRUPRX_CLIENT_ID || "",
+    inviteScopes: ["bot", "applications.commands"],
+    permissionsInt: "8",
+    capabilities: {
+      channels: ["staffLogs", "modLogs", "sessionChannel", "pagerChannel"],
+      keys: ["marizmaApiKey", "robloxGroupId"],
+      features: [
+        "Server Management",
+        "Staff Logging",
+        "Pager System",
+        "Auto Replies",
+        "Auto Announcements",
+        "Moderation Logs",
+      ],
+    },
+  },
+  swissrx: {
+    name: "SwissRx",
+    description: "Private hospital management bot for Swiss Hospital",
+    icon: "/bots/swissrx.png",
+    clientId: process.env.DISCORD_CLIENT_ID_SWISSRX || process.env.NEXT_PUBLIC_SWISSRX_CLIENT_ID || "",
     inviteScopes: ["bot", "applications.commands"],
     permissionsInt: "8",
     capabilities: {

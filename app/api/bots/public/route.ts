@@ -2,7 +2,7 @@ import { NextResponse } from "next/server"
 import { getAllBotsStatus, type BotId } from "@/lib/discord"
 import { getGuildStats, BOT_DATABASES } from "@/lib/mongodb"
 
-// Public bot metadata - SyrupRx Free only
+// Public bot metadata - SyrupRx and SwissRx only
 const PUBLIC_BOT_METADATA: Record<BotId, {
   name: string
   description: string
@@ -14,6 +14,12 @@ const PUBLIC_BOT_METADATA: Record<BotId, {
     description: "Maple Hospital utility and staff management bot",
     icon: "/bots/syruprx.png",
     clientId: process.env.DISCORD_CLIENT_ID_SYRUPRX || process.env.NEXT_PUBLIC_SYRUPRX_CLIENT_ID || "",
+  },
+  swissrx: {
+    name: "SwissRx",
+    description: "Private hospital management bot for Swiss Hospital",
+    icon: "/bots/swissrx.png",
+    clientId: process.env.DISCORD_CLIENT_ID_SWISSRX || process.env.NEXT_PUBLIC_SWISSRX_CLIENT_ID || "",
   },
 }
 

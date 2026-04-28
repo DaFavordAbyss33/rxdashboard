@@ -1,10 +1,14 @@
 import { MongoClient, Db } from "mongodb"
 
-// Bot database configuration - SyrupRx Free only
+// Bot database configuration - SyrupRx and SwissRx only
 export const BOT_DATABASES = {
   syruprx: {
     uri: process.env.MONGODB_URI_SYRUPRX || "",
     name: "SyrupRx",
+  },
+  swissrx: {
+    uri: process.env.MONGODB_URI_SWISSRX || "",
+    name: "SwissRx",
   },
 } as const
 

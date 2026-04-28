@@ -81,9 +81,6 @@ interface BotSettings {
 
 const BOT_NAMES: Record<string, string> = {
   syruprx: "SyrupRx",
-  "syruprx-pro": "SyrupRx PRO",
-  autoclockrx: "AutoclockRx",
-  mednoterx: "MedNoteRx",
   swissrx: "SwissRx",
 }
 

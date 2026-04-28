@@ -8,7 +8,6 @@ import {
   Settings2,
   Globe,
   Bot,
-  CreditCard,
   Shield,
   AlertTriangle,
   Info,
@@ -21,7 +20,6 @@ export type NotificationCategory =
   | "config_change"
   | "website_change"
   | "bot_update"
-  | "subscription"
   | "security"
   | "incident"
   | "system"
@@ -55,11 +53,6 @@ const CATEGORY_CONFIG: Record<
     label: "Bot Updates",
     icon: Bot,
     color: "text-primary",
-  },
-  subscription: {
-    label: "Subscriptions",
-    icon: CreditCard,
-    color: "text-success",
   },
   security: {
     label: "Security",
@@ -109,34 +102,24 @@ const DEMO_NOTIFICATIONS: Notification[] = [
   {
     id: "n3",
     category: "incident",
-    title: "MedNoteRx Disconnected",
+    title: "SwissRx Disconnected",
     description: "Bot went offline unexpectedly. Investigating the issue.",
     timestamp: new Date(Date.now() - 1000 * 60 * 2).toISOString(),
     read: false,
     severity: "error",
-    metadata: { botId: "mednoterx" },
+    metadata: { botId: "swissrx" },
   },
   {
     id: "n4",
     category: "bot_update",
-    title: "AutoclockRx v3.1 Deployed",
-    description: "New payroll export format and improved shift scheduling.",
+    title: "SyrupRx v3.1 Deployed",
+    description: "New pager system and improved staff logging features.",
     timestamp: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
     read: true,
     severity: "info",
   },
   {
     id: "n5",
-    category: "subscription",
-    title: "New Subscription Activated",
-    description: "SyrupRx PRO monthly plan activated for Dev Server.",
-    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 4).toISOString(),
-    read: true,
-    severity: "success",
-    metadata: { botId: "syruprx-pro", guildId: "guild-2" },
-  },
-  {
-    id: "n6",
     category: "security",
     title: "New Login Detected",
     description: "A new login was detected from Chrome on Windows.",
@@ -145,26 +128,17 @@ const DEMO_NOTIFICATIONS: Notification[] = [
     severity: "warning",
   },
   {
-    id: "n7",
+    id: "n6",
     category: "config_change",
-    title: "AutoclockRx Webhook Changed",
-    description: "Payroll webhook URL was updated for Maple Community.",
+    title: "SwissRx Settings Changed",
+    description: "Auto-announce settings were updated for Maple Community.",
     timestamp: new Date(Date.now() - 1000 * 60 * 60 * 8).toISOString(),
     read: true,
     severity: "info",
-    metadata: { botId: "autoclockrx", guildId: "guild-1" },
+    metadata: { botId: "swissrx", guildId: "guild-1" },
   },
   {
-    id: "n8",
-    category: "website_change",
-    title: "Pricing Page Updated",
-    description: "New pricing tiers and annual discount options are now live.",
-    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 12).toISOString(),
-    read: true,
-    severity: "info",
-  },
-  {
-    id: "n9",
+    id: "n7",
     category: "system",
     title: "Scheduled Maintenance",
     description: "Database maintenance window completed successfully.",
@@ -194,7 +168,6 @@ const ALL_CATEGORIES: NotificationCategory[] = [
   "config_change",
   "website_change",
   "bot_update",
-  "subscription",
   "security",
   "incident",
   "system",

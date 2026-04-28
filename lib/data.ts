@@ -45,7 +45,7 @@ export const SYRUPRX_COMMANDS = {
   },
 }
 
-// Bot registry - SyrupRx Free only
+// Bot registry - SyrupRx and SwissRx only
 export const bots: Bot[] = [
   {
     id: "syruprx",
@@ -53,6 +53,32 @@ export const bots: Bot[] = [
     description: "Maple Hospital utility and staff management bot",
     icon: "/bots/syruprx.png",
     clientId: process.env.NEXT_PUBLIC_SYRUPRX_CLIENT_ID || "",
+    inviteScopes: ["bot", "applications.commands"],
+    permissionsInt: "8",
+    capabilities: {
+      channels: ["staffLogs", "modLogs", "sessionChannel", "pagerChannel"],
+      keys: ["marizmaApiKey", "robloxGroupId"],
+      features: [
+        "Server Management",
+        "Staff Logging",
+        "Pager System",
+        "Auto Replies",
+        "Auto Announcements",
+        "Moderation Logs",
+      ],
+      premium: false,
+    },
+    status: "online",
+    guildsCount: 0,
+    wsPing: 64,
+    uptime: "0d 0h 0m",
+  },
+  {
+    id: "swissrx",
+    name: "SwissRx",
+    description: "Private hospital management bot for Swiss Hospital",
+    icon: "/bots/swissrx.png",
+    clientId: process.env.NEXT_PUBLIC_SWISSRX_CLIENT_ID || "",
     inviteScopes: ["bot", "applications.commands"],
     permissionsInt: "8",
     capabilities: {
